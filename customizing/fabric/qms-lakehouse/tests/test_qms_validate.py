@@ -48,6 +48,26 @@ def test_forbidden_column_is_detected_and_fatal(snapshot, tables):
     assert "scrap_qty" in result.detail
 
 
+def test_forbidden_column_on_a_single_late_row_is_still_detected(snapshot, tables):
+    """첫 행만 훑으면 놓치는 경우. 마지막 행 하나에만 심는다."""
+    broken = copy.deepcopy(tables)
+    broken["qms_measurement"][-1]["operator"] = "OP-999"
+    result = next(r for r in validate(snapshot, broken) if r.name == "무중복 위반")
+    assert not result.passed
+    assert "qms_measurement.operator" in result.detail
+
+
+def test_orphan_mes_process_result_id_is_detected_and_fatal(snapshot, tables):
+    """MES 공정이력 연결점도 고아 검사 대상이어야 한다."""
+    broken = copy.deepcopy(tables)
+    target = next(r for r in broken["qms_inspection"] if r["mes_process_result_id"] is not None)
+    target["mes_process_result_id"] = 999999
+    result = next(r for r in validate(snapshot, broken) if r.name == "고아 키")
+    assert not result.passed
+    assert result.fatal
+    assert "999999" in result.detail
+
+
 def test_broken_internal_reference_is_detected_and_fatal(snapshot, tables):
     broken = copy.deepcopy(tables)
     broken["qms_measurement"][0]["spec_id"] = "SPEC-NOPE-NOPE-NOPE"

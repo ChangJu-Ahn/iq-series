@@ -167,10 +167,15 @@ class MesClient:
             raise RuntimeError(f"MCP 툴 {tool} 응답이 비어 있습니다.")
         if "error" in response:
             raise RuntimeError(f"MCP 툴 {tool} 오류: {response['error']}")
+        if "result" not in response:
+            raise RuntimeError(f"MCP 툴 {tool} 응답에 result가 없습니다: {response}")
         result = response["result"]
         if result.get("isError"):
             raise RuntimeError(f"MCP 툴 {tool} 실패: {result.get('content')}")
-        return result["structuredContent"]["result"]
+        structured = result.get("structuredContent")
+        if not isinstance(structured, dict) or "result" not in structured:
+            raise RuntimeError(f"MCP 툴 {tool} 응답 형식이 예상과 다릅니다: {result}")
+        return structured["result"]
 
     def fetch_snapshot(self) -> MesSnapshot:
         process_results = self.mcp_call("list_process_results", {"limit": 500})

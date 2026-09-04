@@ -26,7 +26,8 @@ def test_defect_code_severity_score_matches_severity():
 
 
 def test_defect_codes_carry_no_forbidden_columns():
-    assert not (set(build_defect_codes()[0]) & FORBIDDEN)
+    for row in build_defect_codes():
+        assert not (set(row) & FORBIDDEN)
 
 
 def test_inspection_specs_are_product_by_step_by_characteristic(snapshot):

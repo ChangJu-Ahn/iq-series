@@ -1,6 +1,15 @@
+import os
+
 import pytest
 
-from src.mes_client import parse_mcp_body
+from src.mes_client import (
+    MES_BASE_URL,
+    MesApiKeyMissing,
+    MesClient,
+    MesSnapshot,
+    derive_equipment,
+    parse_mcp_body,
+)
 
 
 def test_parse_plain_json_body():
@@ -28,7 +37,6 @@ def test_parse_empty_body_returns_none():
     assert parse_mcp_body("   \r\n") is None
 
 
-from src.mes_client import derive_equipment
 
 
 def test_derive_equipment_from_distinct_eqp_ids():
@@ -69,7 +77,6 @@ def test_derive_equipment_is_sorted_by_eqp_id():
     ]
 
 
-from src.mes_client import MesApiKeyMissing, MesClient, MesSnapshot
 
 
 def test_client_requires_api_key():
@@ -89,9 +96,7 @@ def test_snapshot_roundtrips_through_dict():
     assert MesSnapshot.from_dict(snapshot.to_dict()) == snapshot
 
 
-import os
 
-from src.mes_client import MES_BASE_URL
 
 
 @pytest.mark.live

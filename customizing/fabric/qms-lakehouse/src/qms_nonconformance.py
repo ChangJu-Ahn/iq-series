@@ -235,7 +235,7 @@ def _ncr_from_inspection(rng, ncr_id, inspection, mes, lots, by_mes_defect, devi
     ncr["eqp_id"] = inspection["eqp_id"]
 
     if mes_row is not None:
-        ncr["affected_qty"] = min(rng.randint(1, 12), mes_row["out_qty"])
+        ncr["affected_qty"] = max(1, min(rng.randint(1, 12), mes_row["out_qty"]))
         is_quality_hold = (
             mes_row["result"] == "Pass"
             and not mes_row.get("defect_code")
@@ -247,7 +247,7 @@ def _ncr_from_inspection(rng, ncr_id, inspection, mes, lots, by_mes_defect, devi
             ncr["root_cause_ko"] = _ROOT_CAUSE_TEXT["측정"]
             ncr["immediate_action_ko"] = _IMMEDIATE_ACTION["측정"]
     elif inspection["lot_id"]:
-        ncr["affected_qty"] = min(rng.randint(1, 12), lots[inspection["lot_id"]]["wafer_qty"])
+        ncr["affected_qty"] = max(1, min(rng.randint(1, 12), lots[inspection["lot_id"]]["wafer_qty"]))
     else:
         ncr["affected_qty"] = rng.randint(1, 8)
     return ncr

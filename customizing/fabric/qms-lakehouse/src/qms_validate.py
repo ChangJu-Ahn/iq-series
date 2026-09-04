@@ -94,6 +94,7 @@ def _check_orphan_keys(snapshot, tables) -> ValidationResult:
         "step_code": {s["step_code"] for s in snapshot.route},
         "material_code": {m["material_code"] for m in snapshot.materials},
         "eqp_id": {e["eqp_id"] for e in snapshot.equipment},
+        "mes_process_result_id": {r["id"] for r in snapshot.process_results},
     }
     problems = []
     for table_name, rows in tables.items():
@@ -108,9 +109,9 @@ def _check_orphan_keys(snapshot, tables) -> ValidationResult:
 def _check_forbidden_columns(tables) -> ValidationResult:
     problems = []
     for table_name, rows in tables.items():
-        if rows:
-            for column in sorted(set(rows[0]) & FORBIDDEN_COLUMNS):
-                problems.append(f"{table_name}.{column}")
+        present = set().union(*(row.keys() for row in rows)) if rows else set()
+        for column in sorted(present & FORBIDDEN_COLUMNS):
+            problems.append(f"{table_name}.{column}")
     return _result("무중복 위반", problems, "MES 중복 컬럼 0건", fatal=True)
 
 
@@ -150,7 +151,8 @@ def _check_time_causality(snapshot, tables) -> ValidationResult:
 
     for row in tables["qms_inspection"]:
         mes_id = row["mes_process_result_id"]
-        if mes_id is not None and row["inspection_datetime"] < out_time[mes_id]:
+        mes_out = out_time.get(mes_id) if mes_id is not None else None
+        if mes_out is not None and row["inspection_datetime"] < mes_out:
             problems.append(f"{row['inspection_id']} 검사시각이 MES 종료시각보다 이르다")
     for row in tables["qms_nonconformance"]:
         inspection = inspection_by_id.get(row["inspection_id"])
@@ -208,8 +210,8 @@ def count_devices(snapshot: MesSnapshot, tables: dict[str, list[dict]]) -> dict[
         mes_id = row["mes_process_result_id"]
         if mes_id is None:
             continue
-        source = mes[mes_id]
-        if source.get("defect_code"):
+        source = mes.get(mes_id)
+        if source is None or source.get("defect_code"):
             continue
         if source["result"] == "Pass" and row["judgment"] == "불합격" and row["defect_found_qty"] == 0:
             device1 += 1
