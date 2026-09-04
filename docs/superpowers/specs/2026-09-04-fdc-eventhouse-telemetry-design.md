@@ -109,14 +109,27 @@ $ python3 -c 'print(hash("EQP-CMP01"))'   # 4561593927473588131
 실행마다 다른 값을 내고 §4.2가 통째로 무너진다. 백필과 라이브 추가의 값이 어긋나
 시계열에 계단이 생긴다.
 
-따라서 시드는 `zlib.crc32`로 만든다. 표준 라이브러리이며 값이 고정이다.
+따라서 시드는 표준 라이브러리의 결정적 해시로 만든다.
+
+처음에는 `zlib.crc32`를 썼으나 구현 중 문제가 드러났다. crc32는 GF(2) 위의 **선형**
+함수라 입력이 몇 비트만 달라지면 출력 비트가 함께 움직인다. 실제 설비·센서 48개
+조합에서 이탈 방향(`seed(...) % 2`)을 뽑아 보니 설비명만 바뀐 조합끼리 부호가 뭉쳐
+`EQP-CMP01`/`EQP-DIFF01`/`EQP-CVD01`/`EQP-ETCH01` 네 대가 같은 센서에서 모두 같은
+방향으로 이탈했다. 전 설비가 한쪽으로 드리프트하면 시연이 인위적으로 보인다.
+
+`hashlib.sha256`은 비선형이라 이런 뭉침이 없다(48조합 중 양의 방향 46%). 여기서
+sha256은 보안 용도가 아니라 **결정적 혼합기**로만 쓴다.
 
 ```python
-def _seed(*parts: object) -> int:
-    return zlib.crc32("|".join(str(p) for p in parts).encode())
+def seed(*parts: object) -> int:
+    digest = hashlib.sha256("|".join(str(p) for p in parts).encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big")
 ```
 
-`random.Random(_seed(...))`만 쓰고, 모듈 전역 `random.*` 함수는 쓰지 않는다.
+검증값: `seed("EQP-CMP01", "AMBIENT_TEMP", 100) == 2450050198`. 테스트가 이 값을
+별도 프로세스 3개에서 확인해 `hash()` 회귀를 막는다.
+
+`random.Random(seed(...))`만 쓰고, 모듈 전역 `random.*` 함수는 쓰지 않는다.
 
 ## 5. 데이터 모델
 
