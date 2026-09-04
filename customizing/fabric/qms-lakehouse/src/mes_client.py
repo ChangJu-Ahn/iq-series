@@ -102,8 +102,7 @@ class MesClient:
     def __init__(self, base_url: str = MES_BASE_URL, api_key: str = "", timeout: int = 60):
         if not api_key:
             raise MesApiKeyMissing(
-                "MES_API_KEY가 비어 있습니다. 노트북 파라미터, Key Vault, "
-                "환경변수 MES_API_KEY 중 하나로 공급하세요."
+                "MES_API_KEY가 비어 있습니다. 노트북 파라미터 셀에 키를 넣으세요."
             )
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key

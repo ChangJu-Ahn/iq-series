@@ -59,37 +59,15 @@ _PARAMETERS = '''# Fabric 파이프라인에서 이 셀의 값을 덮어쓸 수 
 TARGET_SCHEMA = ""
 MES_BASE_URL = "https://mock-mes.greenrock-bb44c93a.koreacentral.azurecontainerapps.io"
 
-# 키를 여기에 적지 마세요. 비워 두면 Key Vault, 그다음 환경변수 순으로 찾습니다.
+# MES 인증 키. 이 작업 영역은 공유될 수 있고 노트북은 자동 저장되니 실행 후 지우세요.
 MES_API_KEY = ""
-KEY_VAULT_URL = ""
-KEY_VAULT_SECRET_NAME = "mes-api-key"
 
 TABLE_PREFIX = "qms_"
 WRITE_MODE = "overwrite"
 '''
 
-_GATE = '''import os
-
-
-def resolve_api_key() -> str:
-    """파라미터 → Key Vault → 환경변수 순으로 MES API 키를 찾는다."""
-    if MES_API_KEY:
-        print("주의: 키가 파라미터 셀에 있습니다. 작업 영역이 공유될 수 있고 노트북은 자동 저장됩니다.")
-        return MES_API_KEY
-    if KEY_VAULT_URL:
-        try:
-            import notebookutils
-
-            secret = notebookutils.credentials.getSecret(KEY_VAULT_URL, KEY_VAULT_SECRET_NAME)
-            if secret:
-                return secret
-        except Exception as exc:
-            print(f"Key Vault 조회를 건너뜁니다: {exc}")
-    return os.environ.get("MES_API_KEY", "")
-
-
-# MES 연결 게이트. REST 와 MCP 두 채널이 모두 살아 있어야 진행합니다.
-CLIENT = MesClient(MES_BASE_URL, resolve_api_key())
+_GATE = '''# MES 연결 게이트. REST 와 MCP 두 채널이 모두 살아 있어야 진행합니다.
+CLIENT = MesClient(MES_BASE_URL, MES_API_KEY)
 try:
     SNAPSHOT = CLIENT.fetch_snapshot()
 except Exception as exc:
