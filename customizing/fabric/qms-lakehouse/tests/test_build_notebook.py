@@ -40,7 +40,22 @@ def test_notebook_starts_with_markdown_and_has_a_parameters_cell():
     assert notebook.cells[-1].cell_type == "markdown"
     tagged = [c for c in notebook.cells if "parameters" in c.metadata.get("tags", [])]
     assert len(tagged) == 1
-    assert "LAKEHOUSE_NAME" in tagged[0].source
+    assert "TARGET_SCHEMA" in tagged[0].source
+    assert "LAKEHOUSE_NAME" not in tagged[0].source
+
+
+def test_load_cell_writes_a_bare_table_name_by_default():
+    """2단 이름 '레이크하우스.테이블'은 Spark가 '스키마.테이블'로 읽어 실패한다.
+
+    대상 레이크하우스는 노트북 Attach 로 정해지므로 이름을 붙이면 안 된다.
+    """
+    notebook = builder.build_notebook(ROOT)
+    load = next(c.source for c in notebook.cells if "saveAsTable" in c.source)
+    params = next(
+        c.source for c in notebook.cells if "parameters" in c.metadata.get("tags", [])
+    )
+    assert 'target = f"{TARGET_SCHEMA}.{name}" if TARGET_SCHEMA else name' in load
+    assert 'TARGET_SCHEMA = ""' in params
 
 
 def test_notebook_contains_no_api_key_literal():

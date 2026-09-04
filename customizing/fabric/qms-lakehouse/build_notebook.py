@@ -46,12 +46,17 @@ MES와 QMS는 서로 다른 시스템입니다. DB 수준의 외래키는 없고
 
 ## 실행 순서
 
-파라미터 셀에서 레이크하우스 이름과 MES API 키 조달 방법을 정한 뒤 전체 실행하세요.
+1. 오른쪽 패널에서 **대상 레이크하우스를 Attach** 합니다. 적재 위치는 이걸로 정해집니다.
+2. 파라미터 셀에서 MES API 키 조달 방법을 정합니다.
+3. 전체 실행합니다.
+
 고정 시드와 `overwrite` 모드를 쓰므로 몇 번을 다시 돌려도 결과가 같습니다.
 """
 
 _PARAMETERS = '''# Fabric 파이프라인에서 이 셀의 값을 덮어쓸 수 있습니다.
-LAKEHOUSE_NAME = "QMS_LH"
+# 적재 대상은 이 노트북에 Attach 한 레이크하우스입니다. 이름 문자열로 정하지 않습니다.
+# 스키마 사용(schema-enabled) 레이크하우스에 넣을 때만 TARGET_SCHEMA 를 채우세요. 예: "dbo"
+TARGET_SCHEMA = ""
 MES_BASE_URL = "https://mock-mes.greenrock-bb44c93a.koreacentral.azurecontainerapps.io"
 
 # 키를 여기에 적지 마세요. 비워 두면 Key Vault, 그다음 환경변수 순으로 찾습니다.
@@ -63,12 +68,13 @@ TABLE_PREFIX = "qms_"
 WRITE_MODE = "overwrite"
 '''
 
-_RESOLVE_KEY = '''import os
+_GATE = '''import os
 
 
 def resolve_api_key() -> str:
     """파라미터 → Key Vault → 환경변수 순으로 MES API 키를 찾는다."""
     if MES_API_KEY:
+        print("주의: 키가 파라미터 셀에 있습니다. 작업 영역이 공유될 수 있고 노트북은 자동 저장됩니다.")
         return MES_API_KEY
     if KEY_VAULT_URL:
         try:
@@ -82,12 +88,8 @@ def resolve_api_key() -> str:
     return os.environ.get("MES_API_KEY", "")
 
 
-RESOLVED_API_KEY = resolve_api_key()
-print("API 키 확보됨" if RESOLVED_API_KEY else "API 키 없음. 파라미터 셀, Key Vault, 환경변수 중 하나를 설정하세요.")
-'''
-
-_GATE = '''# MES 연결 게이트. REST 와 MCP 두 채널이 모두 살아 있어야 진행합니다.
-CLIENT = MesClient(MES_BASE_URL, RESOLVED_API_KEY)
+# MES 연결 게이트. REST 와 MCP 두 채널이 모두 살아 있어야 진행합니다.
+CLIENT = MesClient(MES_BASE_URL, resolve_api_key())
 try:
     SNAPSHOT = CLIENT.fetch_snapshot()
 except Exception as exc:
@@ -116,9 +118,11 @@ print(format_report(RESULTS))
 raise_on_fatal(RESULTS)
 '''
 
-_LOAD = '''for name, rows in TABLES.items():
+_LOAD = '''# saveAsTable 은 홑이름이면 현재 카탈로그·스키마, 즉 Attach 한 레이크하우스에 씁니다.
+# "레이크하우스이름.테이블" 같은 2단 이름은 스키마.테이블로 해석돼 실패합니다.
+for name, rows in TABLES.items():
     assert name.startswith(TABLE_PREFIX), f"테이블 접두사 규칙 위반: {name}"
-    target = f"{LAKEHOUSE_NAME}.{name}" if LAKEHOUSE_NAME else name
+    target = f"{TARGET_SCHEMA}.{name}" if TARGET_SCHEMA else name
     frame = spark.createDataFrame(to_rows(name, rows), schema=TABLE_DDL[name])
     frame.write.format("delta").mode(WRITE_MODE).saveAsTable(target)
     print(f"{target:34} {frame.count():5}행 적재")
@@ -166,7 +170,6 @@ def build_notebook(root: Path) -> nbformat.NotebookNode:
     )
     cells = [nbformat.v4.new_markdown_cell(_INTRO)]
     cells.append(_code(_PARAMETERS, tags=["parameters"]))
-    cells.append(_code(_RESOLVE_KEY))
     for module in MODULE_ORDER:
         source = (root / "src" / f"{module}.py").read_text(encoding="utf-8")
         cells.append(_code(strip_local_imports(source), qms_cell="module", qms_module=module))
