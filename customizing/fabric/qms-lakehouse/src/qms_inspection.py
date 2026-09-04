@@ -14,7 +14,7 @@ import datetime as dt
 import random
 
 from src.mes_client import MesSnapshot
-from src.qms_reference import SEED_INSPECTION, STEP_CHARACTERISTICS
+from src.qms_reference import SEED_INSPECTION
 
 INSPECTION_COUNTS = {"IPQC": 91, "IPQC-RT": 40, "OQC": 24, "PCS": 36, "EQV": 16}
 
@@ -114,7 +114,7 @@ def _row(
         "eqp_id": eqp_id,
         "mes_process_result_id": mes_id,
         "inspector_id": inspector["inspector_id"],
-        "inspection_datetime": when.isoformat(),
+        "inspection_datetime": when,
         "sample_size": sample_size,
         "inspected_wafer_qty": wafers,
         "judgment": judgment,
@@ -375,6 +375,3 @@ def _build_eqv(rng, ids, snapshot, by_team) -> list[dict]:
             )
         )
     return rows
-
-
-assert set(STEP_CHARACTERISTICS)  # 공정 특성 표가 비어 있으면 측정 생성이 불가능하다

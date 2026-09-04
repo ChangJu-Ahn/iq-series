@@ -1,4 +1,5 @@
 import collections
+import datetime as dt
 
 from src.qms_inspection import INSPECTION_COUNTS, build_inspections, mes_result_index
 from src.qms_masters import build_inspectors
@@ -106,7 +107,8 @@ def test_quantities_and_causality_hold(snapshot):
         if row["mes_process_result_id"] is not None:
             mes = index[row["mes_process_result_id"]]
             assert row["sample_size"] <= mes["in_qty"]
-            assert row["inspection_datetime"] >= mes["out_time"]
+            # MES out_time 은 JSON 문자열이라 파싱해서 비교한다.
+            assert row["inspection_datetime"] >= dt.datetime.fromisoformat(mes["out_time"])
 
 
 def test_inspections_carry_no_forbidden_columns(snapshot):
