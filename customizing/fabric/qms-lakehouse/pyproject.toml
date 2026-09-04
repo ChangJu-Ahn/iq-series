@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "live: MES 서버에 실제로 접속하는 테스트. MES_API_KEY 필요",
+]
+addopts = "-m 'not live'"
