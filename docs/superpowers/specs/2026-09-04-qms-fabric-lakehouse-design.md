@@ -96,9 +96,17 @@ MCP 쓰기 툴(`start_lot`, `register_process_result`)은 **호출하지 않는�
 | 80 | TEST | Wafer Test (EDS) | Electrical Die Sort | Prober | FAB |
 | 90 | PKG | Packaging | Assembly & Test | Bonder | PACK |
 
-**설비 9대**: EQP-CMP01(Polisher-A), EQP-CVD01(CVD-A), EQP-DIFF01(Furnace-A),
-EQP-ETCH01(Etcher-A), EQP-IMPL01(Implanter-A), EQP-PHOT01(Scanner-EUV1),
-EQP-PHOT02(Scanner-DUV1), EQP-PKG01(Bonder-A), EQP-TEST01(Prober-A)
+**설비**: MES는 설비 마스터를 REST에도 MCP에도 노출하지 않는다. 웹 UI `/equipment`에만
+9대가 보이지만 HTML 파싱은 페이지 구조 변경에 취약하므로 채택하지 않는다. QMS는
+`list_process_results`의 `eqp_id` 고유값에서 설비 목록을 유도한다. 이 방식으로 8대가
+확보된다.
+
+EQP-CMP01(CMP), EQP-CVD01(CVD), EQP-DIFF01(DIFF), EQP-ETCH01(ETCH), EQP-IMPL01(IMPL),
+EQP-PHOT01(PHOTO), EQP-PHOT02(PHOTO), EQP-TEST01(TEST)
+
+EQP-PKG01은 PKG 단계에 도달한 로트가 아직 없어 공정이력에 등장하지 않으므로 제외된다.
+설비의 `eqp_type`은 `get_process_route`의 `step_code → eqp_type` 매핑으로 채운다.
+설비 검증검사(EQV) 건수가 8×2=16인 근거다.
 
 **자재 12종**
 
@@ -188,13 +196,13 @@ erDiagram
 | `qms_defect_code` | 마스터 | 24 | MES 6종 × 세부 4종 전개 |
 | `qms_inspection_spec` | 마스터 | 108 | 4제품 × 9공정 × 3특성 |
 | `qms_inspector` | 마스터 | 15 | 5팀 × 3교대 |
-| `qms_inspection` | 트랜잭션 | 209 | 6.5 검사 구성 참조 |
-| `qms_measurement` | 트랜잭션 | 264 | 6.5 참조. 재검사 40×3 + 정기 36×3 + 설비검증 18×2 |
+| `qms_inspection` | 트랜잭션 | 207 | 6.5 검사 구성 참조 |
+| `qms_measurement` | 트랜잭션 | 260 | 6.5 참조. 재검사 40×3 + 정기 36×3 + 설비검증 16×2 |
 | `qms_incoming_inspection` | 트랜잭션 | 200 | 자재 12종 × 입고 회차 |
 | `qms_nonconformance` | 트랜잭션 | 95 | 6.4 출처 배분 참조 |
 | `qms_disposition` | 트랜잭션 | 95 | NCR 1:1 |
 
-합계 1,010행. 마스터계를 200으로 맞추면 비현실적이고, 부적합을 200으로 맞추면
+합계 1,004행. 마스터계를 200으로 맞추면 비현실적이고, 부적합을 200으로 맞추면
 검사 대비 부적합률이 50%가 되어 팹 현실과 어긋나므로 자연 크기를 택했다.
 
 **측정치 저장 범위에 대한 결정**: 실제 SPC는 샘플링 계획의 모든 원시 포인트를 저장한다.
@@ -264,7 +272,7 @@ erDiagram
 | `certified_until` | date | 자격 만료일 |
 | `is_active` | boolean | 재직 여부 |
 
-#### qms_inspection (트랜잭션, 209행)
+#### qms_inspection (트랜잭션, 207행)
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
@@ -288,7 +296,7 @@ erDiagram
 | `has_nonconformance` | boolean | NCR 발행 여부 |
 | `remark_ko` | string | 비고 |
 
-#### qms_measurement (트랜잭션, 264행)
+#### qms_measurement (트랜잭션, 260행)
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
@@ -456,7 +464,7 @@ MES lot → `qms_nonconformance.lot_id`로 두 시스템을 4단계 왕복해야
 | IPQC 재검사 불합격 | 10 | 재검사 40건 중 25% |
 | OQC 불합격·조건부 | 6 | OQC 24건 중 25% |
 | 정기 공정능력 Cpk 미달 | 7 | 정기 36건 중 약 20% |
-| 설비 검증 부적합 | 2 | 설비검증 18건 중 약 11% |
+| 설비 검증 부적합 | 2 | 설비검증 16건 중 약 13% |
 | IQC 불합격·특채 | 40 | 입고검사 200건 중 20%. 장치④ 2건 포함 |
 | 고객 제기 | 6 | `ncr_source='고객제기'`. MES 키 없이 제품 코드만 보유 |
 | 합계 | 95 | |
@@ -467,7 +475,7 @@ IQC 불합격률 20%는 실제 팹 기준으로 높다. 자재 품질 시나리�
 
 ### 6.5 검사 구성
 
-`qms_inspection` 209행의 산출식이다. 모든 항이 MES 실측값에서 결정론적으로 유도된다.
+`qms_inspection` 207행의 산출식이다. 모든 항이 MES 실측값에서 결정론적으로 유도된다.
 
 | 검사 유형 | `inspection_type` | 건수 | 산출식 | 측정치 기록 |
 |---|---|---|---|---|
@@ -475,8 +483,8 @@ IQC 불합격률 20%는 실제 팹 기준으로 높다. 자재 품질 시나리�
 | IPQC 재검사 | IPQC-RT | 40 | 결함 있음(35) ∪ non-Pass(7), 교집합 2 | 3점 × 40 = 120 |
 | OQC 출하검사 | OQC | 24 | Done 로트 6 × 4 배치 | 없음 |
 | 정기 공정능력 | PCS | 36 | 제품 4 × 공정 9 | 3점 × 36 = 108 |
-| 설비 검증검사 | EQV | 18 | 설비 9 × 2회 | 2점 × 18 = 36 |
-| 합계 | | 209 | | 264 |
+| 설비 검증검사 | EQV | 16 | 설비 8 × 2회 | 2점 × 16 = 32 |
+| 합계 | | 207 | | 260 |
 
 `PCS`(Process Capability Study)와 `EQV`(Equipment Verification)는 특정 로트가 아닌
 제품·설비 단위 검사이므로 `lot_id`가 `null`이다. 검증 항목 2(고아 키)는 `null`을 허용하고
@@ -492,8 +500,8 @@ IQC 불합격률 20%는 실제 팹 기준으로 높다. 자재 품질 시나리�
 | 4 | 코드 | MES MCP 클라이언트: urllib JSON-RPC, list_lots / list_process_results / get_process_route |
 | 5 | 코드 | 연결 검증 게이트. 두 채널 모두 확인, 실패 시 진단 메시지와 함께 중단 |
 | 6 | 코드 | 마스터 생성: 불량코드 24, 검사기준 108, 검사원 15 |
-| 7 | 코드 | 검사 생성: MES 91건 앵커링, 209행 |
-| 8 | 코드 | 측정치 생성: spec 기반 정규분포, 264행 |
+| 7 | 코드 | 검사 생성: MES 91건 앵커링, 207행 |
+| 8 | 코드 | 측정치 생성: spec 기반 정규분포, 260행 |
 | 9 | 코드 | IQC 생성: 자재 12종 × 공급업체, 200행 |
 | 10 | 코드 | NCR + 처리 생성: 불일치 장치 13건 주입, 95+95행 |
 | 11 | 코드 | Delta 적재: `spark.createDataFrame().write.format("delta").mode(WRITE_MODE).saveAsTable()` |
