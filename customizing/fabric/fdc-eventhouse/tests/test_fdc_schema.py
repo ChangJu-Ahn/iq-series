@@ -11,6 +11,7 @@ from src.fdc_schema import (
     SPEC_SCHEMA,
     SPEC_TABLE,
     TABLE_DDL,
+    spark_schema,
     to_iso,
     to_rows,
     watermark_query,
@@ -118,3 +119,28 @@ def test_watermark_query_targets_reading_table():
 def test_reading_schema_has_no_lot_columns():
     forbidden = {"lot_id", "product_code", "wafer_qty", "defect_code", "judgment", "result", "operator"}
     assert not (forbidden & {name for name, _ in READING_SCHEMA})
+
+
+def test_spark_schema_pins_types():
+    """타입을 추론에 맡기면 정수만 든 배치가 LongType 으로 잡혀 KQL real 이 깨진다."""
+    reading = spark_schema(READING_TABLE)
+    assert "reading_ts TIMESTAMP" in reading
+    assert "value DOUBLE" in reading
+    spec = spark_schema(SPEC_TABLE)
+    assert "is_active BOOLEAN" in spec
+    assert "sample_interval_sec INT" in spec
+
+
+def test_spark_schema_field_count_matches_columns():
+    assert len(spark_schema(READING_TABLE).split(", ")) == len(READING_COLUMNS)
+    assert len(spark_schema(SPEC_TABLE).split(", ")) == len(SPEC_COLUMNS)
+
+
+def test_spark_schema_order_matches_to_rows(readings):
+    names = [f.split(" ")[0] for f in spark_schema(READING_TABLE).split(", ")]
+    assert names == list(READING_COLUMNS)
+
+
+def test_spark_schema_rejects_unknown_table():
+    with pytest.raises(KeyError):
+        spark_schema("no_such_table")

@@ -1,13 +1,15 @@
 """KQL 테이블 스키마와 Spark 적재용 행 변환.
 
-Spark 커넥터의 `tableCreateOptions=CreateIfNotExist` 가 테이블을 자동
-생성하지만, 여기에 DDL 을 명시적으로 둔다. 이유는 두 가지다.
+테이블은 Spark 커넥터의 `tableCreateOptions=CreateIfNotExist` 가 만들고,
+컬럼 타입은 `spark_schema()` 가 데이터프레임에 명시해 고정한다. 타입 추론에
+맡기면 판독값이 우연히 모두 정수인 배치에서 `long` 컬럼이 만들어지고 이후
+실수 적재가 조용히 잘린다.
 
-- 자동 생성은 컬럼 타입을 데이터프레임에서 추론한다. 판독값이 우연히 모두
-  정수면 `long` 으로 잡혀 이후 실수 적재가 깨진다. DDL 을 먼저 실행하면
-  타입이 고정된다.
-- 실습자가 Eventhouse 를 직접 열어 스키마를 확인하고 KQL 을 배우는 자료가
-  된다.
+`TABLE_DDL` 과 `RETENTION_DDL` 은 노트북이 **실행하지 않고 출력만** 한다.
+Spark 커넥터는 데이터 평면 전용이라 `.create-merge` 같은 제어 명령을 보낼 수
+없고, 그걸 보내려면 `azure-kusto-data` 를 따로 설치해야 해서 실습자마다
+설치 단계가 하나 늘기 때문이다. 대신 실습자가 KQL 쿼리셋에 붙여넣어 스키마를
+확인하거나 다른 작업 영역으로 옮길 때 쓰는 자료로 둔다.
 """
 
 from __future__ import annotations
@@ -112,3 +114,25 @@ def to_rows(records: list[dict], columns: tuple[str, ...]) -> list[tuple]:
 def watermark_query(table: str = READING_TABLE) -> str:
     """마지막으로 적재한 시각. 없으면 빈 결과가 아니라 null 한 행이 온다."""
     return f"{table} | summarize last_ts = max(reading_ts)"
+
+
+# KQL 타입에 대응하는 Spark 타입. 데이터프레임 스키마를 명시하는 데 쓴다.
+_SPARK_TYPE = {
+    "string": "STRING",
+    "real": "DOUBLE",
+    "int": "INT",
+    "bool": "BOOLEAN",
+    "datetime": "TIMESTAMP",
+}
+
+
+def spark_schema(table: str) -> str:
+    """`spark.createDataFrame(rows, schema=...)` 에 넣을 DDL 문자열.
+
+    스키마를 주지 않으면 Spark 가 값에서 타입을 추론한다. 한 배치의 판독값이
+    우연히 모두 정수면 LongType 으로 잡히고, 커넥터가 그대로 KQL `long`
+    컬럼을 만들어 이후 실수 적재가 조용히 잘린다. 문자열로 두는 이유는 이
+    모듈이 pyspark 없이도 import 되어야 오프라인 테스트가 돌기 때문이다.
+    """
+    schema = {SPEC_TABLE: SPEC_SCHEMA, READING_TABLE: READING_SCHEMA}[table]
+    return ", ".join(f"{name} {_SPARK_TYPE[kql_type]}" for name, kql_type in schema)
