@@ -188,21 +188,22 @@ erDiagram
 | `qms_defect_code` | 마스터 | 24 | MES 6종 × 세부 4종 전개 |
 | `qms_inspection_spec` | 마스터 | 108 | 4제품 × 9공정 × 3특성 |
 | `qms_inspector` | 마스터 | 15 | 5팀 × 3교대 |
-| `qms_inspection` | 트랜잭션 | 210 | IPQC 91(MES 앵커) + OQC 119 |
-| `qms_measurement` | 트랜잭션 | 약 260 | 계량형 검사 약 87건 × 포인트 2~4 |
+| `qms_inspection` | 트랜잭션 | 209 | 6.5 검사 구성 참조 |
+| `qms_measurement` | 트랜잭션 | 264 | 6.5 참조. 재검사 40×3 + 정기 36×3 + 설비검증 18×2 |
 | `qms_incoming_inspection` | 트랜잭션 | 200 | 자재 12종 × 입고 회차 |
 | `qms_nonconformance` | 트랜잭션 | 95 | 6.4 출처 배분 참조 |
 | `qms_disposition` | 트랜잭션 | 95 | NCR 1:1 |
 
-합계 약 1,007행. 마스터계를 200으로 맞추면 비현실적이고, 부적합을 200으로 맞추면
+합계 1,010행. 마스터계를 200으로 맞추면 비현실적이고, 부적합을 200으로 맞추면
 검사 대비 부적합률이 50%가 되어 팹 현실과 어긋나므로 자연 크기를 택했다.
 
 **측정치 저장 범위에 대한 결정**: 실제 SPC는 샘플링 계획의 모든 원시 포인트를 저장한다.
-`sampling_method`가 "5매 랜덤 9포인트"면 검사 1건당 45행이 된다. 이 데모에서는 검사 1건당
-**대표 포인트 2~4점만 저장**한다. 규격 이탈이 발생한 검사는 이탈 포인트를 반드시 포함시켜
-`is_out_of_spec` 분석이 성립하게 한다. `sampling_method`는 원 계획을 그대로 기술하고,
-`qms_inspection.measurement_count`에 실제 저장 행수를 기록해 둘의 차이를 명시한다.
-목표는 250~270행이며, 검증 셀은 이 범위를 허용한다.
+`sampling_method`가 "5매 랜덤 9포인트"면 검사 1건당 45행이 된다. 이 데모에서는 측정값이
+판정을 좌우하는 검사 유형(재검사·정기 공정능력·설비 검증)에 대해서만 **대표 포인트
+2~3점을 저장**한다. 통상 IPQC는 합부 판정만 기록한다. 규격 이탈이 발생한 검사는 이탈
+포인트를 반드시 포함시켜 `is_out_of_spec` 분석이 성립하게 한다. `sampling_method`는 원
+계획을 그대로 기술하고, `qms_inspection.measurement_count`에 실제 저장 행수를 기록해
+둘의 차이를 명시한다.
 
 ### 5.3 테이블 스키마
 
@@ -263,19 +264,19 @@ erDiagram
 | `certified_until` | date | 자격 만료일 |
 | `is_active` | boolean | 재직 여부 |
 
-#### qms_inspection (트랜잭션, 210행)
+#### qms_inspection (트랜잭션, 209행)
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | `inspection_id` | string PK | 예 `INS-2026-0001` |
-| `inspection_type` | string | IPQC(공정검사)/OQC(출하검사) |
-| `lot_id` | string `MES` | 로트 |
-| `product_code` | string `MES` | 제품 |
+| `inspection_type` | string | IPQC(공정검사)/IPQC-RT(재검사)/OQC(출하검사)/PCS(정기 공정능력)/EQV(설비 검증) |
+| `lot_id` | string `MES` | 로트. PCS·EQV는 `null` |
+| `product_code` | string `MES` | 제품. EQV는 `null` |
 | `product_name` | string | 제품명 라벨 |
 | `step_code` | string `MES` | 공정 |
 | `step_name` | string | 공정명 라벨 |
 | `eqp_id` | string `MES` | 생산설비 |
-| `mes_process_result_id` | int `MES` | MES 공정이력 1건과 직접 연결 |
+| `mes_process_result_id` | int `MES` | MES 공정이력 1건과 직접 연결. IPQC 계열만 값 보유 |
 | `inspector_id` | string `FK` | 검사원 |
 | `inspection_datetime` | timestamp | 검사 일시 |
 | `sample_size` | int | 검사 샘플 수 |
@@ -287,7 +288,7 @@ erDiagram
 | `has_nonconformance` | boolean | NCR 발행 여부 |
 | `remark_ko` | string | 비고 |
 
-#### qms_measurement (트랜잭션, 260행)
+#### qms_measurement (트랜잭션, 264행)
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
@@ -404,8 +405,7 @@ MES 공정이력의 상태가 QMS 검사 판정을 결정한다.
 | `Pass` + `defect_code` 있음 | 33 | 합격 70% / 조건부합격 30% |
 | `Pass` + 결함 없음 | 51 | 합격 94% / 불합격 6% (품질홀드) |
 
-여기에 OQC(출하검사)를 추가한다. `status=Done`인 로트 6건에 대해 제품 특성별로 검사를
-생성해 총 210행을 맞춘다.
+여기에 IPQC 재검사, OQC, 정기 공정능력 검사, 설비 검증검사를 더한다. 상세 구성은 6.5절.
 
 ### 6.2 의도적 불일치 장치 (13건)
 
@@ -448,17 +448,39 @@ MES lot → `qms_nonconformance.lot_id`로 두 시스템을 4단계 왕복해야
 
 | 출처 | 건수 | 근거 |
 |---|---|---|
-| IPQC 불합격 | 10 | MES Fail 5 + Rework 2 + 품질홀드 3(장치①) |
-| IPQC 조건부합격 | 10 | `Pass`+결함 33건 중 30% |
-| IPQC 검사 단독 검출 | 4 | 장치③ |
-| OQC 불합격·조건부 | 30 | OQC 119건 중 약 25% |
-| IQC 불합격·특채 | 40 | 입고검사 200건 중 20% |
-| 고객 제기 | 1 | `ncr_source='고객제기'`. MES 키 없이 제품 코드만 보유 |
+| IPQC 기본 · MES Fail | 5 | MES `result=Fail` 전건 |
+| IPQC 기본 · MES Rework | 2 | MES `result=Rework` 전건 |
+| IPQC 기본 · 품질홀드 | 3 | 장치① |
+| IPQC 기본 · 조건부합격 | 10 | `Pass`+결함 33건 중 30% |
+| IPQC 기본 · 검사 단독 검출 | 4 | 장치③ |
+| IPQC 재검사 불합격 | 10 | 재검사 40건 중 25% |
+| OQC 불합격·조건부 | 6 | OQC 24건 중 25% |
+| 정기 공정능력 Cpk 미달 | 7 | 정기 36건 중 약 20% |
+| 설비 검증 부적합 | 2 | 설비검증 18건 중 약 11% |
+| IQC 불합격·특채 | 40 | 입고검사 200건 중 20%. 장치④ 2건 포함 |
+| 고객 제기 | 6 | `ncr_source='고객제기'`. MES 키 없이 제품 코드만 보유 |
 | 합계 | 95 | |
 
 IQC 불합격률 20%는 실제 팹 기준으로 높다. 자재 품질 시나리오를 충분히 만들기 위한
 데모 목적의 의도적 설정이며, `qms_incoming_inspection.judgment` 분포는 불합격 12% /
 특채 8% / 합격 80%로 둔다.
+
+### 6.5 검사 구성
+
+`qms_inspection` 209행의 산출식이다. 모든 항이 MES 실측값에서 결정론적으로 유도된다.
+
+| 검사 유형 | `inspection_type` | 건수 | 산출식 | 측정치 기록 |
+|---|---|---|---|---|
+| IPQC 기본 | IPQC | 91 | MES 공정이력 1:1 | 없음 (합부만) |
+| IPQC 재검사 | IPQC-RT | 40 | 결함 있음(35) ∪ non-Pass(7), 교집합 2 | 3점 × 40 = 120 |
+| OQC 출하검사 | OQC | 24 | Done 로트 6 × 4 배치 | 없음 |
+| 정기 공정능력 | PCS | 36 | 제품 4 × 공정 9 | 3점 × 36 = 108 |
+| 설비 검증검사 | EQV | 18 | 설비 9 × 2회 | 2점 × 18 = 36 |
+| 합계 | | 209 | | 264 |
+
+`PCS`(Process Capability Study)와 `EQV`(Equipment Verification)는 특정 로트가 아닌
+제품·설비 단위 검사이므로 `lot_id`가 `null`이다. 검증 항목 2(고아 키)는 `null`을 허용하고
+값이 있을 때만 MES 실존을 확인한다.
 
 ## 7. 노트북 구조
 
@@ -470,8 +492,8 @@ IQC 불합격률 20%는 실제 팹 기준으로 높다. 자재 품질 시나리�
 | 4 | 코드 | MES MCP 클라이언트: urllib JSON-RPC, list_lots / list_process_results / get_process_route |
 | 5 | 코드 | 연결 검증 게이트. 두 채널 모두 확인, 실패 시 진단 메시지와 함께 중단 |
 | 6 | 코드 | 마스터 생성: 불량코드 24, 검사기준 108, 검사원 15 |
-| 7 | 코드 | 검사 생성: MES 91건 앵커링, 210행 |
-| 8 | 코드 | 측정치 생성: spec 기반 정규분포, 260행 |
+| 7 | 코드 | 검사 생성: MES 91건 앵커링, 209행 |
+| 8 | 코드 | 측정치 생성: spec 기반 정규분포, 264행 |
 | 9 | 코드 | IQC 생성: 자재 12종 × 공급업체, 200행 |
 | 10 | 코드 | NCR + 처리 생성: 불일치 장치 13건 주입, 95+95행 |
 | 11 | 코드 | Delta 적재: `spark.createDataFrame().write.format("delta").mode(WRITE_MODE).saveAsTable()` |
@@ -496,7 +518,7 @@ IQC 불합격률 20%는 실제 팹 기준으로 높다. 자재 품질 시나리�
 
 1. **행수**: 8개 테이블이 목표 범위 내
 2. **고아 키 0건**: QMS의 모든 `lot_id`, `product_code`, `step_code`, `material_code`가
-   MES에 실존
+   MES에 실존. `null`은 허용하고(PCS·EQV 검사, 고객제기 NCR) 값이 있을 때만 검사
 3. **무중복 위반 0건**: QMS 컬럼에 `mes_result`, `scrap_qty`, `operator`, `in_qty`,
    `out_qty` 등 금지 컬럼 부재
 4. **내부 FK 무결성**: `inspection_id`, `ncr_id`, `spec_id`, `inspector_id` 참조 유효
@@ -512,9 +534,18 @@ IQC 불합격률 20%는 실제 팹 기준으로 높다. 자재 품질 시나리�
 ```
 customizing/fabric/qms-lakehouse/
 ├── README.md                       설치·실행·Data Agent 연결 가이드
-├── qms_lakehouse_seed.ipynb        Fabric 노트북 본체
-└── data-agent-schema.md            Data Agent 지식용 스키마 설명서
+├── data-agent-schema.md            Data Agent 지식용 스키마 설명서
+├── qms_lakehouse_seed.ipynb        Fabric 노트북 본체 (빌드 산출물)
+├── build_notebook.py               src/ 모듈을 노트북으로 조립
+├── src/                            생성 로직 (순수 Python, 로컬 테스트 가능)
+└── tests/                          pytest 스위트
 ```
+
+**노트북을 직접 손으로 쓰지 않는 이유**: 생성 로직이 약 1,000줄이고 정확성이 데모의
+전부인데, `pyspark`가 없는 로컬에서는 노트북 셀을 테스트할 수 없다. 순수 Python 모듈을
+진실의 원천으로 두고 로컬에서 TDD한 뒤, 빌드 스크립트가 모듈 소스를 노트북 셀로 인라인
+전개한다. Fabric에 올리는 산출물은 파일 업로드나 `pip install` 없이 단독 실행되는 `.ipynb`
+하나이며, 동시에 모든 로직이 pytest로 검증된 상태가 된다.
 
 `data-agent-schema.md`는 Data Agent에 제공할 컨텍스트다. 테이블별 용도, 컬럼 의미,
 MES와의 조인 방법, 대표 질의 패턴을 담는다.
