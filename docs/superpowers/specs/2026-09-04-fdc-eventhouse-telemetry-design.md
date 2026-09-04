@@ -95,6 +95,29 @@ value = f(eqp_id, sensor_code, reading_ts)
 
 이것이 append-only 스트림에서 멱등성을 확보하는 방식이다.
 
+### 4.3 난수 시드는 프로세스 간 안정적이어야 한다
+
+파이썬 내장 `hash()`는 문자열에 대해 **프로세스마다 다른 값**을 낸다(`PYTHONHASHSEED`
+무작위화). 실측으로 확인했다.
+
+```
+$ python3 -c 'print(hash("EQP-CMP01"))'   # 6352192405693204750
+$ python3 -c 'print(hash("EQP-CMP01"))'   # 4561593927473588131
+```
+
+노트북은 3분마다 **새 프로세스**에서 실행된다. 시드에 `hash()`를 쓰면 같은 타임스탬프가
+실행마다 다른 값을 내고 §4.2가 통째로 무너진다. 백필과 라이브 추가의 값이 어긋나
+시계열에 계단이 생긴다.
+
+따라서 시드는 `zlib.crc32`로 만든다. 표준 라이브러리이며 값이 고정이다.
+
+```python
+def _seed(*parts: object) -> int:
+    return zlib.crc32("|".join(str(p) for p in parts).encode())
+```
+
+`random.Random(_seed(...))`만 쓰고, 모듈 전역 `random.*` 함수는 쓰지 않는다.
+
 ## 5. 데이터 모델
 
 KQL DB에 테이블 2개를 둔다. 둘 다 노트북이 자동 생성한다.
@@ -333,7 +356,7 @@ customizing/fabric/fdc-eventhouse/
 ├── build_notebook.py           # src/*.py 를 셀로 인라인
 ├── fdc_eventhouse_stream.ipynb # 빌드 산출물
 ├── src/
-│   ├── mes_client.py           # qms-lakehouse 와 공유 (§12.1)
+│   ├── mes_probe.py            # MCP 전용 최소 클라이언트 (§12.1)
 │   ├── fdc_sensors.py          # 센서 정의 42종
 │   ├── fdc_anomaly.py          # MES 유도 이상 주입
 │   ├── fdc_generator.py        # 순수 함수 판독값 생성
@@ -342,18 +365,27 @@ customizing/fabric/fdc-eventhouse/
 └── tests/                      # 오프라인 pytest
 ```
 
-### 12.1 `mes_client.py` 공유
+### 12.1 MES 접속은 자기 완결형으로 둔다
 
-두 패키지가 같은 190행 네트워크 클라이언트를 필요로 한다. 복사본을 두 벌 두지 않는다.
-`customizing/fabric/shared/mes_client.py`로 옮기고 양쪽 `build_notebook.py`가 인라인한다.
+`qms-lakehouse`의 `mes_client.py`를 공유 모듈로 추출하는 안을 검토했으나 채택하지 않는다.
 
-`qms-lakehouse`의 기존 테스트 105개가 이 리팩터링을 보호한다. 전부 통과하면 안전하다.
+이 패키지가 MES에서 필요로 하는 것은 MCP 호출 두 개뿐이다.
 
-### 12.2 브랜치 의존성
+- `list_process_results` → 설비 목록과 설비별 불량률
+- `get_process_route` → `step_code`별 `eqp_type`
 
-이 작업은 `changju-ahn-qms-fabric-lakehouse-design` 브랜치에만 있는 `qms-lakehouse`
-패키지에 의존한다(§12.1의 공유 모듈). 해당 브랜치는 아직 `main`에 병합되지 않았다.
-구현 시 그 브랜치 위에 쌓거나, 먼저 병합해야 한다.
+REST 호출(`/api/products`, `/api/materials`, `/api/bom`)과 `MesSnapshot` 전체는 쓰지
+않는다. 190행 클라이언트를 공유하면 절반이 사용되지 않는 채로 딸려온다.
+
+더 큰 이유는 두 노트북이 **각자 자기 완결적이어야 한다**는 기존 제약이다. `src/` 모듈은
+런타임 import가 아니라 빌드 시점에 노트북 셀로 인라인된다. 따라서 "공유"는 코드 중복을
+없애는 게 아니라 빌드 스크립트의 include 경로를 하나 늘릴 뿐이다.
+
+중복되는 것은 MCP SSE 응답 파서 약 30행이다. 그 대가로 미병합 브랜치 의존과 기존
+테스트 105개에 대한 회귀 위험을 없앤다. 값싼 거래다.
+
+따라서 `mes_probe.py`는 MCP 호출만 하는 최소 클라이언트로 새로 쓴다. 이 패키지는
+`main` 브랜치 위에서 단독으로 구현·테스트된다.
 
 ## 13. 핸즈온 절차
 
