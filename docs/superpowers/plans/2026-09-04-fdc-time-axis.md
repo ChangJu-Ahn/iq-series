@@ -2440,3 +2440,39 @@ README 720행 표 변경                    → FAILED   ← 고치기 전 어�
 노트북 _OUTRO 를 3분 권장으로 되돌리기    → FAILED
 "3분마다" 서술 되살리기                  → FAILED
 ```
+
+### 5차에서 배운 각도로 자체 발견 (커밋 `8fff316`)
+
+Issue H 의 교훈은 **"같은 문서의 인접 항목을 놓쳤다"** 였다. `writeMode` 는 읽고
+`adjustSchema` 는 안 읽었다. 그 각도로 커넥터 옵션을 다시 훑어 두 가지를 봤다.
+
+**`pollingOnDriver` — 여섯 번째가 아니었다.** `isAsync` 기본값이 `false`
+(`KustoSinkOptions.scala:110`)라 `FinalizeHelper` 가 `Await.result(mergeTask, timeout)`
+로 기다리고, `pollingOnDriver=false` 경로의 `resultsRdd.foreachPartition(...)` 은 동기
+Spark 액션이라 태스크 실패가 Future 를 깨고 `Await.result` 가 다시 던진다. 실패는
+전파된다. 기본값의 실제 효과는 폴링 로그가 워커에만 남는 것과 코어 하나뿐이다.
+
+**쓰기 경로의 타임존 — 이건 맞았다.**
+
+```scala
+// RowCSVWriterUtils.scala:53-54
+LocalDateTime.ofInstant(Instant.EPOCH.plus(timestamp, ChronoUnit.MICROS), timeZone)
+```
+
+내부 micros 를 이 존의 `LocalDateTime` 으로 바꾼 뒤 **offset 없는** 문자열로 CSV 에
+쓴다. Kusto 는 offset 없는 datetime 을 UTC 로 읽는다. 이 값이 UTC 가 아니면 모든
+`reading_ts` 가 통째로 밀리고, 적재는 성공하고 값만 틀린다.
+
+**3차에서 고친 watermark 읽기 경로의 짝이다.** 그때 읽기만 고치고 쓰기는 커넥터
+기본값에 기대고 있었다. 타임존이라는 같은 주제인데 반쪽만 봤다 — Issue F 의 "쌍둥이 중
+한쪽" 과 같은 모양이다.
+
+기본값은 실제로 UTC 다(`KustoDataSourceUtils.scala:566` 의
+`parameters.getOrElse(DateTimeUtils.TIMEZONE_OPTION, "UTC")`, 그리고 `parameters` 는
+세션 config 가 아니라 DataSource 옵션 맵이다). 그래서 오늘은 안 터진다. 그래도
+`writeMode` 때와 같은 이유로 명시했다.
+
+키 이름은 Spark 3.5 소스로 확인했다(`DateTimeUtils.scala:46` `TIMEZONE_OPTION = "timeZone"`).
+**틀린 키를 박으면 테스트는 통과하는데 실제로는 아무것도 고정 안 되는** 함정이라 따로 봤다.
+
+**343 테스트** · 노트북 7시나리오. 옵션을 빼면 실패하는 것을 확인했다.
