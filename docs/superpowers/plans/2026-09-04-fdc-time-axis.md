@@ -1433,30 +1433,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
 
-`tests/test_fdc_validate.py` 의 `readings` 픽스처를 창 기반으로 바꾼다(20행 부근).
-
-```python
-@pytest.fixture(scope="module")
-def readings(facts, busy_window):
-    """공정이력이 있는 24시간. 경보 비율 검사가 의미를 가지려면 이 규모가 필요하다."""
-    return build_readings(facts, *busy_window)
-
-
-@pytest.fixture(scope="module")
-def checks(readings, facts, busy_window):
-    return validate(readings, facts, watermark=busy_window[0])
-```
-
-99행 부근의 짧은 구간도 창 기준으로 바꾼다.
-
-```python
-    start = busy_window[0]
-    short = build_readings(facts, start, start + timedelta(seconds=30))
-```
-
-그 테스트 함수 시그니처에 `busy_window` 를 더한다.
-
-파일 끝에 아래를 붙인다.
+`readings` / `checks` 픽스처는 Task 4 Step 1 에서 이미 `busy_window` 기반으로 옮겼다. 여기서는 테스트만 더한다. `tests/test_fdc_validate.py` 끝에 붙인다.
 
 ```python
 def test_unknown_run_status_is_fatal(readings, facts):
@@ -1551,6 +1528,22 @@ from src.fdc_sensors import (
 ```
 
 > `r.get("run_status")` 로 읽는 이유: 컬럼이 아예 없는 행이면 `None` 이 되어 `bad_status` 에 걸린다. `r["run_status"]` 로 읽으면 `KeyError` 로 죽어서 검증 보고서가 안 나온다.
+
+- [ ] **Step 3b: 검사 개수를 세던 기존 테스트 4건을 고친다**
+
+검사가 8개에서 9개가 되므로 개수를 박아 둔 테스트가 깨진다. **구현이 아니라 기대값이 낡은 것이므로 기대값을 고치는 게 맞다.**
+
+```python
+def test_all_nine_checks_run(checks):          # 이름도 바꾼다
+    assert [c.number for c in checks] == list(range(1, 10))
+
+
+def test_fatal_flags_match_spec(checks):
+    ...
+    assert fatal == {1, 2, 3, 4, 5, 9}
+```
+
+`test_unknown_sensor_does_not_crash_status_check` 와 `test_validate_handles_empty_readings` 의 `assert len(result) == 8` 을 `== 9` 로 바꾼다. 두 곳이다.
 
 - [ ] **Step 4: 샘플링 간격 검사를 확인한다**
 

@@ -25,8 +25,8 @@ def checks(readings, facts, busy_window):
     return validate(readings, facts, watermark=busy_window[0])
 
 
-def test_all_eight_checks_run(checks):
-    assert [c.number for c in checks] == list(range(1, 9))
+def test_all_nine_checks_run(checks):
+    assert [c.number for c in checks] == list(range(1, 10))
 
 
 def test_healthy_data_passes_everything(checks):
@@ -36,7 +36,7 @@ def test_healthy_data_passes_everything(checks):
 
 def test_fatal_flags_match_spec(checks):
     fatal = {c.number for c in checks if c.fatal}
-    assert fatal == {1, 2, 3, 4, 5}
+    assert fatal == {1, 2, 3, 4, 5, 9}
 
 
 def test_lot_column_leak_is_fatal(readings, facts):
@@ -90,7 +90,7 @@ def test_unknown_sensor_does_not_crash_status_check(readings, facts):
     """3번이 치명으로 잡은 뒤에도 6번이 죽지 않아야 검증 리포트가 나온다."""
     tainted = [dict(readings[0], sensor_code="NO_SUCH_SENSOR")] + readings[1:]
     result = validate(tainted, facts)
-    assert len(result) == 8
+    assert len(result) == 9
     assert next(c for c in result if c.number == 6).passed
 
 
@@ -146,4 +146,35 @@ def test_report_shows_fatal_tag():
 
 def test_validate_handles_empty_readings(facts):
     result = validate([], facts)
-    assert len(result) == 8
+    assert len(result) == 9
+
+
+def test_unknown_run_status_is_fatal(readings, facts):
+    rows = [dict(r) for r in readings]
+    rows[0]["run_status"] = "Maintenance"
+    assert any(c.fatal and not c.passed for c in validate(rows, facts))
+
+
+def test_missing_run_status_is_fatal(readings, facts):
+    rows = [dict(r) for r in readings]
+    del rows[0]["run_status"]
+    assert any(c.fatal and not c.passed for c in validate(rows, facts))
+
+
+def test_idle_row_with_process_sensor_is_fatal(readings, facts):
+    """유휴에 공정 센서가 섞이면 0 값이 그대로 경보가 된다."""
+    rows = [dict(r) for r in readings]
+    victim = next(r for r in rows if r["run_status"] == "Idle")
+    victim["sensor_code"] = "RF_POWER"
+    assert any(c.fatal and not c.passed for c in validate(rows, facts))
+
+
+def test_clean_readings_have_no_fatal_check(readings, facts):
+    assert not any(c.fatal and not c.passed for c in validate(readings, facts))
+
+
+def test_lot_columns_still_forbidden(readings, facts):
+    """무중복 원칙은 그대로다. run_status 는 설비 상태이지 로트가 아니다."""
+    rows = [dict(r) for r in readings]
+    rows[0]["lot_id"] = "LOT0010"
+    assert any(c.fatal and not c.passed for c in validate(rows, facts))

@@ -16,8 +16,13 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from src.fdc_anomaly import build_profiles
-from src.fdc_generator import ALARM, NORMAL, classify
-from src.fdc_sensors import SAMPLE_INTERVAL_SEC, build_sensor_spec_rows, sensor_by_code
+from src.fdc_generator import ALARM, IDLE, NORMAL, RUNNING, classify
+from src.fdc_sensors import (
+    SAMPLE_INTERVAL_SEC,
+    build_sensor_spec_rows,
+    idle_sensors,
+    sensor_by_code,
+)
 from src.fdc_schema import READING_SCHEMA
 
 FORBIDDEN_COLUMNS = frozenset(
@@ -156,6 +161,29 @@ def validate(readings: list[dict], facts, watermark: datetime | None = None) -> 
             False,
             abnormal[worst] > abnormal[best],
             f"{worst}={abnormal[worst]}행, {best}={abnormal[best]}행",
+        )
+    )
+
+    bad_status = sorted({r.get("run_status") for r in readings} - {RUNNING, IDLE})
+    idle_common = {s.sensor_code for s in idle_sensors()}
+    idle_leak = sorted(
+        {
+            r["sensor_code"]
+            for r in readings
+            if r.get("run_status") == IDLE and r["sensor_code"] not in idle_common
+        }
+    )
+    checks.append(
+        Check(
+            9,
+            "run_status 가 Run/Idle 뿐이고 유휴에 공정 센서가 없다",
+            True,
+            not bad_status and not idle_leak,
+            (
+                f"알 수 없는 상태: {bad_status}" if bad_status
+                else f"유휴에 섞인 공정 센서: {idle_leak}" if idle_leak
+                else f"가동 {sum(1 for r in readings if r['run_status'] == RUNNING):,}행"
+            ),
         )
     )
 
