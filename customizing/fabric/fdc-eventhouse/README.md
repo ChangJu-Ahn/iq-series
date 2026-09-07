@@ -497,7 +497,7 @@ Spark 커넥터의 `CreateIfNotExist` 가 만듭니다. 컬럼 타입은 `spark_
 
 ```bash
 cd customizing/fabric/fdc-eventhouse
-python3 -m pytest -q          # 전체 테스트
+python3 -m pytest -q          # 전체 테스트 (셀 실행 시나리오 포함)
 python3 build_notebook.py     # 노트북 재생성
 ```
 
