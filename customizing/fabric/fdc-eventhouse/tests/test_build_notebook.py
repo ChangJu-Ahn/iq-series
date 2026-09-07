@@ -457,3 +457,32 @@ def test_readme_recommends_the_longer_schedule_interval():
     assert schedule.index("15분 (권장)") < schedule.index("| 3분"), (
         "권장 주기가 표에서 먼저 와야 한다"
     )
+
+
+def test_notebook_outro_recommends_the_same_interval_as_the_readme(notebook):
+    """참가자는 README 를 안 보고 노트북만 볼 수도 있다.
+
+    4차 리뷰(Issue G) 때 README 를 15분 권장으로 바꾸면서 노트북 셀은 3분 권장인
+    채로 남았다. 같은 안내가 두 곳에 있으면 한쪽만 고치게 된다 — Issue F 와 같은
+    함정이다. 둘을 묶어 둔다.
+    """
+    outro = next(c.source for c in notebook.cells if "Run > Schedule" in c.source)
+    assert "**15분을 권합니다.**" in outro
+    assert "3분으로 두고 싶겠지만 권하지 않습니다" in outro, (
+        "3분을 권하는 옛 문구로 돌아가면 안 된다"
+    )
+    assert "겹" in outro, "근거가 용량이 아니라 겹침이어야 한다"
+    assert outro.index("15분") < outro.index("3분"), "권장이 먼저 와야 한다"
+
+
+def test_no_stale_three_minute_cadence_claims():
+    """'3분마다 실행된다' 는 서술은 15분 권장과 어긋난다.
+
+    결정성의 근거는 '실행마다 새 프로세스' 이지 주기가 아니다. 주기를 못 박으면
+    권장이 바뀔 때마다 여러 곳이 조용히 낡는다.
+    """
+    for name in ("README.md", "build_notebook.py",
+                 "src/fdc_anomaly.py", "src/fdc_generator.py", "src/fdc_schema.py"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        for phrase in ("3분마다", "3 분마다"):
+            assert phrase not in text, f"{name} 에 낡은 주기 서술이 남아 있다: {phrase}"

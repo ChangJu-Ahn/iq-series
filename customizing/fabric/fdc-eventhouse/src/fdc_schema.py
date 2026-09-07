@@ -86,7 +86,7 @@ TABLE_DDL: dict[str, str] = {
     READING_TABLE: _create_command(READING_TABLE, READING_SCHEMA),
 }
 
-# 판독 테이블만 보존 기간을 둔다. 3분마다 쌓이므로 방치하면 용량을 먹는다.
+# 판독 테이블만 보존 기간을 둔다. 스케줄마다 쌓이므로 방치하면 용량을 먹는다.
 # 스펙 테이블은 42행 정적이라 보존 정책이 필요 없다.
 RETENTION_DDL = (
     f".alter-merge table {READING_TABLE} policy retention "
