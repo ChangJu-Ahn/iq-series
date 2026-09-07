@@ -2,6 +2,7 @@ import subprocess
 import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -226,6 +227,7 @@ def test_values_are_rounded(day_rows):
 from src.fdc_generator import IDLE, IDLE_INTERVAL_SEC, RUNNING
 from src.fdc_runs import runs_by_equipment, span
 from src.fdc_sensors import COMMON_SENSORS
+from src.mes_probe import MesFacts
 
 
 def _busiest_run_window(facts):
@@ -312,3 +314,55 @@ def test_lot_id_never_leaks_into_rows(facts, busy_window):
     """FDC 는 로트를 모른다. 계획서 '설계 결정' 참조."""
     rows = build_readings(facts, *busy_window)
     assert all("lot_id" not in r for r in rows)
+
+
+def test_a_result_registered_behind_the_watermark_never_gets_run_rows(facts):
+    """README '알려진 한계' 의 720행 표를 고정한다.
+
+    실습 중 MES 쓰기 도구로 과거 시각에 실적을 등록하면 그 런의 Run 판독값은
+    영영 생기지 않는다. watermark 다음부터만 만들기 때문이다. 에러는 안 난다 —
+    MES 는 돌았다고 하는데 FDC 에는 Idle 만 있어서 교차 질의가 빈 결과를 낸다.
+
+    한계를 못박아 두는 특성화 테스트다. 동작이 달라지면 README 를 같이 고쳐야
+    한다는 뜻이지, 이대로가 옳다는 뜻이 아니다.
+    """
+    runs = sorted(runs_by_equipment(facts)["EQP-ETCH01"], key=lambda r: r.start)
+    gap_lo, gap_hi = max(
+        ((runs[i].end, runs[i + 1].start) for i in range(len(runs) - 1)),
+        key=lambda g: g[1] - g[0],
+    )
+    lo = gap_lo + timedelta(minutes=10)
+    hi = lo + timedelta(hours=1)
+    assert hi < gap_hi, "고른 창이 유휴 틈 안에 들어와야 한다"
+
+    mes_from, mes_to = span(facts)
+    watermark = max(r["reading_ts"] for r in build_readings(facts, mes_from, mes_to))
+    assert watermark > hi, "등록한 런이 watermark 뒤에 있어야 시나리오가 성립한다"
+
+    payload = dict(facts.process_results[0])
+    payload.update(
+        id=9999, lot_id="LOT9999", step_code="ETCH", eqp_id="EQP-ETCH01",
+        in_time=lo.isoformat(), out_time=hi.isoformat(),
+        result="Fail", defect_code="Particle",
+    )
+    after = MesFacts(
+        equipment=facts.equipment,
+        process_results=[*facts.process_results, payload],
+        route=facts.route,
+    )
+
+    def in_window(rows, status):
+        return [r for r in rows
+                if lo <= r["reading_ts"] <= hi
+                and r["eqp_id"] == "EQP-ETCH01"
+                and r["run_status"] == status]
+
+    incremental = build_readings(after, watermark, mes_to + timedelta(minutes=30))
+    backfilled = build_readings(after, mes_from, mes_to)
+
+    assert in_window(incremental, RUNNING) == [], "증분 실행은 과거를 다시 만들지 않는다"
+    assert len(in_window(backfilled, RUNNING)) == 720, "README 표의 720행"
+    assert len(in_window(build_readings(facts, mes_from, mes_to), IDLE)) == 24
+
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    assert "720" in readme and "24" in readme, "숫자가 바뀌면 README 표도 고쳐야 한다"
