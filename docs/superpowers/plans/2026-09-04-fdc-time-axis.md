@@ -146,18 +146,17 @@ Expected: `공정이력 91건 · 고유 out_time 91`, 구간이 약 65시간, `�
 
 - [ ] **Step 3: 기존 테스트로 회귀를 본다**
 
-업무 데이터는 안 바뀌었으므로 대부분 통과해야 한다.
+업무 데이터는 안 바뀌었으므로 **전부 통과한다.**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests -q 2>&1 | tail -25
 ```
 
-**여기서 깨지는 테스트 목록을 적어 둔다.** 예상되는 것은 두 부류다.
+Expected: `252 passed`
 
-1. `T0 = 2026-09-04T12:00Z` 를 쓰는 `build_readings` 테스트 — T0 가 이제 MES 구간(약 09-01 07:00 ~ 09-04 00:00) **밖**이다. Task 4 에서 `busy_window` 로 옮긴다.
-2. 시각이 전부 같다는 전제를 깔았던 테스트가 있다면 지금 깨진다.
+지금 소스는 시간을 모른다 — `build_readings` 가 런과 무관하게 모든 설비·모든 격자에 값을 찍으므로 `T0` 가 MES 구간 밖이어도 행이 나온다. **이게 바로 고치려는 문제다.** 시간축이 들어오는 Task 4 에서 `T0` 를 쓰는 테스트가 깨지고, 거기서 `busy_window` 로 옮긴다.
 
-Task 4 까지는 이 실패를 그대로 둔다. 지금 고치면 두 번 고치게 된다.
+여기서 하나라도 깨지면 픽스처의 컬럼 집합이 달라진 것이므로 Step 2 로 돌아간다.
 
 - [ ] **Step 4: 커밋한다**
 
@@ -1842,7 +1841,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 
 ## 완료 조건
 
-- [ ] `python3 -m pytest tests -q` 전부 통과 (**252건** — 기존 236 + 신규 16)
+- [ ] `python3 -m pytest tests -q` 전부 통과 (Task 0 시점 기준선 **252건**, 신규 테스트만큼 늘어난다)
 - [ ] 픽스처의 고유 `out_time` 이 91개
 - [ ] 모든 판독 행에 `run_status` 가 있고 값이 `Run` / `Idle` 뿐
 - [ ] 유휴 행의 센서가 공통 2종뿐이고 5분 격자 위에 있음
