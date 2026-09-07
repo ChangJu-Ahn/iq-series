@@ -510,3 +510,19 @@ def test_write_maps_columns_by_name_not_position(notebook):
     assert "FailIfNotMatch" not in cell.split('.option("adjustSchema"')[1][:200], (
         "FailIfNotMatch 로 바꾸면 첫 실행이 깨진다"
     )
+
+
+def test_write_pins_the_connector_timezone_to_utc(notebook):
+    """쓰기 경로에도 타임존 손잡이가 있다. 3차에 고친 읽기 경로의 짝이다.
+
+    커넥터는 내부 micros 를 WriteOptions.timeZone 의 LocalDateTime 으로 바꾼 뒤
+    **offset 없는** 문자열로 CSV 에 쓴다(RowCSVWriterUtils:53-54). Kusto 는
+    offset 없는 datetime 을 UTC 로 읽으므로, 이 값이 UTC 가 아니면 reading_ts 가
+    통째로 밀린다. 적재는 성공하고 값만 틀린다 — 다섯 라운드 내내 나온 그 모양이다.
+
+    커넥터 기본값은 UTC 다(KustoDataSourceUtils:566
+    `parameters.getOrElse(DateTimeUtils.TIMEZONE_OPTION, "UTC")`, 그리고 Spark
+    3.5 의 `TIMEZONE_OPTION = "timeZone"`). 기본값에 기대는 대신 못 박는다.
+    """
+    cell = next(c.source for c in notebook.cells if "def kusto_write" in c.source)
+    assert '.option("timeZone", "UTC")' in cell
