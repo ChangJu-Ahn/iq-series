@@ -526,3 +526,29 @@ def test_write_pins_the_connector_timezone_to_utc(notebook):
     """
     cell = next(c.source for c in notebook.cells if "def kusto_write" in c.source)
     assert '.option("timeZone", "UTC")' in cell
+
+
+def test_readme_schema_change_guidance_matches_the_write_option(notebook):
+    """README 가 "컬럼 이름으로 매핑한다" 고 참가자에게 약속한다.
+
+    이건 노트북의 adjustSchema 옵션에서만 나오는 성질이다. 옵션을 기본값으로
+    되돌리면 위치 기반이 되고, README 의 저 문장은 조용히 거짓이 된다 —
+    참가자는 안내를 따랐는데 값이 옆 컬럼으로 밀린다.
+
+    customizing/ 모듈이라 참가자가 실제로 센서와 컬럼을 더한다. 그때 읽는
+    안내이므로 노트북 동작과 묶어 둔다.
+    """
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    dev_section = readme.split("## 개발")[1]
+
+    assert "컬럼 이름으로 매핑" in dev_section, (
+        "개발 절에서 스키마 변경 시 이름 매핑을 설명해야 한다"
+    )
+    assert ".create-merge" in dev_section, (
+        "컬럼을 더했으면 .create-merge 를 다시 실행하라고 알려야 한다"
+    )
+
+    cell = next(c.source for c in notebook.cells if "def kusto_write" in c.source)
+    assert '"GenerateDynamicCsvMapping"' in cell, (
+        "README 가 이름 매핑을 약속하는데 노트북이 위치 매핑이면 안내가 거짓이 된다"
+    )

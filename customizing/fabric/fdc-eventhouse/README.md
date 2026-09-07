@@ -504,6 +504,11 @@ python3 build_notebook.py     # 노트북 재생성
 `src/` 를 고쳤으면 반드시 `build_notebook.py` 를 다시 돌리세요. 노트북은 생성물이고
 직접 고치면 다음 빌드에서 덮어써집니다.
 
+**센서나 컬럼을 더했다면** 위 §1 의 `.create-merge` 를 다시 실행하세요. 그 명령은
+새 컬럼을 스키마 **끝에 붙이지** 재배치하지 않지만, 노트북이 컬럼 이름으로 매핑하므로
+값은 제자리에 들어갑니다. 다시 실행하지 않으면 새 컬럼이 테이블에 아예 없어서 그
+컬럼을 쓰는 KQL 이 실패합니다.
+
 깜빡해도 테스트가 잡습니다. `test_committed_notebook_matches_a_fresh_build` 가
 커밋된 `.ipynb` 를 지금 `src/` 로 빌드한 것과 바이트까지 비교합니다. 이게 실패하면
 답은 하나입니다 — `python3 build_notebook.py`.
