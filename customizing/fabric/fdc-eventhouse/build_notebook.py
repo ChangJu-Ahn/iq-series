@@ -136,6 +136,13 @@ def kusto_read(query):
 
 
 def kusto_write(frame, table):
+    # Transactional write 는 임시 테이블로 넣고 → 폴링하고 → extent 를 옮깁니다.
+    # 그동안 화면에 아무것도 안 나와서 멈춘 것처럼 보입니다. 첫 백필은 10만 행
+    # 이라 몇 분 걸립니다. 여기서 "Run all" 을 다시 누르면 두 실행이 같은
+    # watermark 를 읽고 같은 행을 두 번 씁니다. Eventhouse 에는 유니크 제약이
+    # 없어서 조용히 2배가 됩니다. 그래서 기다리라고 먼저 말해 둡니다.
+    print(f"  {table} 에 {frame.count():,}행 쓰는 중입니다. 첫 실행은 몇 분 걸립니다.")
+    print("  진행 표시가 없어도 정상입니다. 이 셀을 다시 실행하지 마세요.")
     (
         frame.write.format(KUSTO_FORMAT)
         .option("kustoCluster", KUSTO_URI)
@@ -299,8 +306,20 @@ else:
         f"스펙에 없는 센서의 판독 행이 조인에서 조용히 사라집니다.\\n"
         f"  {_spec_present:,} > {_spec_expected}  중복 적재됐습니다. "
         f"스펙과 조인하는 질의가 중복 수만큼 부풀어 오릅니다.\\n"
-        f"둘 다 KQL 쿼리셋에서 `.drop table {SPEC_TABLE}` 로 지운 뒤 "
-        "이 노트북을 다시 실행하면 됩니다."
+        f"\\n"
+        f"스펙이 {_spec_expected}의 배수로 불어났다면 두 실행이 겹친 것입니다. "
+        f"그렇다면 {READING_TABLE} 도 같이 중복됐을 가능성이 높습니다. "
+        f"스펙만 지우면 에러는 사라지지만 판독은 계속 2배인 채로 남습니다.\\n"
+        f"\\n"
+        f"KQL 쿼리셋에서 판독 중복부터 확인하세요.\\n"
+        f"  {READING_TABLE}\\n"
+        f"  | summarize n = count() by reading_ts, eqp_id, sensor_code\\n"
+        f"  | where n > 1 | count\\n"
+        f"\\n"
+        f"0 이 아니면 두 테이블을 모두 지우고 다시 실행하세요.\\n"
+        f"  .drop table {SPEC_TABLE}\\n"
+        f"  .drop table {READING_TABLE}\\n"
+        f"0 이면 스펙만 지우면 됩니다.  .drop table {SPEC_TABLE}"
     )
 
 if READINGS:

@@ -171,6 +171,18 @@ def test_watermark_round_trip_survives_any_driver_timezone(tz):
     문자열 검사가 아니라 의미를 검사한다. PySpark 의 toInternal/fromInternal
     을 그대로 재현해, 우리가 쓴 시각이 어떤 드라이버 타임존에서도 원래 값으로
     돌아오는지 확인한다.
+
+    ⚠️ 이 재현은 **PySpark 3.5 의 `python/pyspark/sql/types.py`** 기준이다.
+    테스트가 프로덕션 코드의 상대(fromInternal)를 복제하고 있으므로, PySpark
+    가 동작을 바꾸면 코드와 테스트가 **같은 방향으로 함께** 틀린다. 테스트는
+    계속 초록인데 프로덕션만 깨지는 종류다. Fabric 런타임의 Spark 버전을
+    올릴 때는 원문을 다시 대조하라.
+
+        def fromInternal(self, ts):
+            return datetime.datetime.fromtimestamp(ts // 1000000).replace(...)
+
+    tz 인자가 붙거나 utcfromtimestamp 로 바뀌면 노트북의 astimezone 을 함께
+    고쳐야 한다. 그때까지 남는 방어는 미래 watermark 가드뿐이다.
     """
     import calendar
     import os
@@ -255,9 +267,24 @@ def test_watermark_cell_never_falls_back_to_backfill(notebook):
 
 
 def test_watermark_query_tolerates_a_missing_table(notebook):
-    """첫 실행에는 테이블이 없다. 거기서 예외가 나면 안 된다."""
+    """노트북에 들어간 watermark_query 가 첫 실행에 살아남아야 한다.
+
+    `"union isfuzzy=true" in cell` 만 보면 안 된다. isfuzzy 는 여러 레그 중
+    일부가 없을 때만 무시하고, 공식 문서는 "If no resolutions were
+    successful, the query returns an error" 라고 명시한다. 레그가 실제
+    테이블 하나뿐이면 첫 실행에 쿼리가 그대로 실패한다.
+
+    앞선 구현이 정확히 그 상태였는데, 문자열 검사만 하던 이 테스트가
+    통과시켰다. docstring 은 Kusto 런타임 동작을 단언하고 어서션은 토큰
+    존재만 보는 틈이었다. 의미를 보도록 tests/test_fdc_schema.py 의
+    test_watermark_query_tolerates_missing_table 과 기준을 맞춘다.
+    """
     cell = next(c.source for c in notebook.cells if "def watermark_query" in c.source)
     assert "union isfuzzy=true" in cell
+    assert "datatable(" in cell, (
+        "레그가 실제 테이블 하나뿐이면 첫 실행에 쿼리가 에러를 낸다"
+    )
+    assert cell.index("union isfuzzy=true") < cell.index("datatable(")
 
 
 def test_watermark_cell_does_not_cap_span(notebook):
@@ -378,4 +405,55 @@ def test_committed_notebook_matches_a_fresh_build(tmp_path):
     committed = (ROOT / "fdc_eventhouse_stream.ipynb").read_bytes()
     assert committed == fresh_path.read_bytes(), (
         "커밋된 노트북이 src/ 와 어긋납니다. `python3 build_notebook.py` 를 실행하세요."
+    )
+
+
+# --- 실행이 겹쳤을 때의 복구 안내 -------------------------------------------
+#
+# 두 실행이 같은 watermark 를 읽으면 스펙도 판독도 함께 중복됩니다. 스펙만
+# 지우라고 안내하면 에러는 사라지지만 판독 테이블은 계속 2배인 채로 남고,
+# 참가자는 고쳤다고 믿습니다. 그 조용한 상태로 되돌아가지 않게 묶어 둡니다.
+
+
+def _load_cell(notebook):
+    return next(c.source for c in notebook.cells if "_spec_present" in c.source)
+
+
+def test_spec_gate_recovery_covers_the_reading_table(notebook):
+    """스펙만 지우라고 안내하면 판독 중복이 그대로 남는다."""
+    cell = _load_cell(notebook)
+    # 스펙 행 수가 어긋났을 때 내는 마지막 raise 의 메시지만 본다
+    message = cell.rsplit("raise RuntimeError", 1)[1].split(")\n", 1)[0]
+    assert ".drop table {READING_TABLE}" in message, (
+        "스펙만 지우면 판독 테이블은 계속 2배인 채로 남는다"
+    )
+    assert "summarize n = count() by reading_ts, eqp_id, sensor_code" in message, (
+        "지우기 전에 판독이 실제로 중복됐는지 확인할 방법을 줘야 한다"
+    )
+
+
+def test_write_warns_before_a_long_silent_write(notebook):
+    """Transactional 쓰기는 몇 분간 출력이 없어 멈춘 것처럼 보인다.
+
+    참가자가 "Run all" 을 다시 누르면 두 실행이 같은 watermark 를 읽고 같은
+    행을 두 번 씁니다. Kusto 에 유니크 제약이 없어 조용히 2배가 됩니다.
+    막을 코드가 없으므로 최소한 기다리라고 말해야 합니다.
+    """
+    cell = next(c.source for c in notebook.cells if "def kusto_write" in c.source)
+    body = cell.split("def kusto_write", 1)[1].split(".save()", 1)[0]
+    assert "print(" in body, "쓰기 전에 안내가 나가야 한다"
+    assert "다시 실행하지 마세요" in body
+
+
+def test_readme_recommends_the_longer_schedule_interval():
+    """3분 주기는 실행이 주기보다 길어질 수 있어 겹침을 부른다.
+
+    Learn 은 starter pool 세션 기동만으로 2~5분이 걸릴 수 있다고 적는다.
+    표에서 권장 표시가 사라지면 안내가 조용히 옛 상태로 돌아간다.
+    """
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "**15분 (권장)**" in readme
+    schedule = readme.split("### 4. 스케줄 걸기", 1)[1].split("####", 1)[0]
+    assert schedule.index("15분 (권장)") < schedule.index("| 3분"), (
+        "권장 주기가 표에서 먼저 와야 한다"
     )
