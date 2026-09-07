@@ -452,9 +452,11 @@ def test_readme_recommends_the_longer_schedule_interval():
     표에서 권장 표시가 사라지면 안내가 조용히 옛 상태로 돌아간다.
     """
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "**15분 (권장)**" in readme
+    assert "**15분 (권장 · 겹침 방지)**" in readme, (
+        "표만 보고 지나가는 사람도 근거를 알아야 한다"
+    )
     schedule = readme.split("### 4. 스케줄 걸기", 1)[1].split("####", 1)[0]
-    assert schedule.index("15분 (권장)") < schedule.index("| 3분"), (
+    assert schedule.index("15분 (권장") < schedule.index("| 3분"), (
         "권장 주기가 표에서 먼저 와야 한다"
     )
 
@@ -486,3 +488,25 @@ def test_no_stale_three_minute_cadence_claims():
         text = (ROOT / name).read_text(encoding="utf-8")
         for phrase in ("3분마다", "3 분마다"):
             assert phrase not in text, f"{name} 에 낡은 주기 서술이 남아 있다: {phrase}"
+
+
+def test_write_maps_columns_by_name_not_position(notebook):
+    """커넥터 기본값은 위치 기반 CSV 적재다.
+
+    KustoSink.md: adjustSchema 가 'NoAdjustment'(기본) 면 "it does nothing".
+    매핑을 안 만드니 CSV 가 위치로 들어간다. 그런데 Learn 의 `.create-merge
+    table` 은 "Any column ... that didn't previously exist in T will be added
+    to the end of T's schema" — 재배치를 안 한다. 둘을 겹치면 스키마가 바뀐 뒤
+    옛 테이블에 쓸 때 값이 옆 컬럼으로 밀리는데, 적재는 성공하고 검사 9개도
+    통과한다. 검사는 생성한 배치를 보지 테이블을 안 보기 때문이다.
+
+    FailIfNotMatch 는 쓰면 안 된다. KustoIngestionUtils.forceAdjustSchema 에는
+    setCsvMapping 이 가진 빈 타깃 가드가 없어서, 테이블이 없는 첫 실행에서
+    빈 스키마와 비교하다 SchemaMatchException 을 던진다. KustoWriter 는 이
+    검사를 tableExists 계산과 테이블 생성보다 **먼저** 부른다.
+    """
+    cell = next(c.source for c in notebook.cells if "def kusto_write" in c.source)
+    assert '.option("adjustSchema", "GenerateDynamicCsvMapping")' in cell
+    assert "FailIfNotMatch" not in cell.split('.option("adjustSchema"')[1][:200], (
+        "FailIfNotMatch 로 바꾸면 첫 실행이 깨진다"
+    )

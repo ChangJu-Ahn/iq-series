@@ -150,6 +150,19 @@ def kusto_write(frame, table):
         .option("kustoTable", table)
         .option("accessToken", kusto_token())
         .option("tableCreateOptions", "CreateIfNotExist")
+        # 커넥터는 항상 CSV 로 올립니다. 기본값 NoAdjustment 는 문서 그대로
+        # "it does nothing" 이라 매핑을 안 만들고 **위치**로 들어갑니다. 그런데
+        # .create-merge 는 새 컬럼을 스키마 끝에 붙일 뿐 재배치하지 않습니다.
+        # 그래서 이 모듈의 컬럼 순서가 바뀐 뒤 옛 테이블에 쓰면 값이 옆 컬럼으로
+        # 밀려 들어갑니다. 타입이 안 맞으면 null 이 되므로 적재는 "성공" 하고
+        # 검사 9개도 통과합니다 — 생성한 배치를 보지 테이블을 안 보기 때문입니다.
+        #
+        # GenerateDynamicCsvMapping 은 {컬럼 이름, 대상 타입, DataFrame 위치} 로
+        # 매핑을 만들어 순서를 무의미하게 만듭니다. FailIfNotMatch 가 아닌 이유는
+        # 그쪽 forceAdjustSchema 에 빈 타깃 가드가 없어서 — setCsvMapping 에는
+        # 있습니다 — 테이블이 없는 첫 실행에서 빈 스키마와 비교하다 던집니다.
+        # 테이블 생성보다 먼저 불립니다.
+        .option("adjustSchema", "GenerateDynamicCsvMapping")
         # 커넥터 기본값이긴 하지만 명시합니다. 이 노트북의 중복 방지는 "쓰기는
         # 전부 성공하거나 전부 실패한다" 에 기대고 있습니다. Queued 로 바꾸면
         # 워커 일부만 안착할 수 있는데, 행이 설비별로 묶여 있어서 다음 실행의

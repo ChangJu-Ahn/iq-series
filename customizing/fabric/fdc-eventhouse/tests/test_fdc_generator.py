@@ -365,4 +365,5 @@ def test_a_result_registered_behind_the_watermark_never_gets_run_rows(facts):
     assert len(in_window(build_readings(facts, mes_from, mes_to), IDLE)) == 24
 
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
-    assert "720" in readme and "24" in readme, "숫자가 바뀌면 README 표도 고쳐야 한다"
+    assert "| Eventhouse 최종 | **0** | 24 |" in readme
+    assert "| 등록 후 처음부터 백필했다면 | **720** | 0 |" in readme
