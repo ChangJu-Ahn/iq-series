@@ -249,15 +249,29 @@ if not _spec_rows:
     )
 
 _spec_present = _spec_rows[0]["rows"]
+_spec_expected = len(SPEC_ROWS)
 
+# 0 / 정확히 기대값 / 그 외 를 가릅니다. "0 이 아니면 건너뛴다" 로 뭉뚱그리면
+# 부분 적재(20행만 남음)가 영구히 방치됩니다. 그러면 스펙에 없는 센서의 판독
+# 행이 inner join 에서 조용히 사라집니다. 중복은 눈에 띄지만 누락은 안 띕니다.
 if _spec_present == 0:
     _spec_frame = spark.createDataFrame(
         to_rows(SPEC_ROWS, SPEC_COLUMNS), schema=spark_schema(SPEC_TABLE)
     )
     kusto_write(_spec_frame, SPEC_TABLE)
     print(f"{SPEC_TABLE:20} {_spec_frame.count():7,d}행 적재")
-else:
+elif _spec_present == _spec_expected:
     print(f"{SPEC_TABLE:20} 건너뜀 (이미 {_spec_present:,}행)")
+else:
+    raise RuntimeError(
+        f"{SPEC_TABLE} 이 {_spec_present:,}행입니다. {_spec_expected}행이어야 합니다.\\n"
+        f"  {_spec_present:,} < {_spec_expected}  이전 적재가 중간에 끊겼습니다. "
+        f"스펙에 없는 센서의 판독 행이 조인에서 조용히 사라집니다.\\n"
+        f"  {_spec_present:,} > {_spec_expected}  중복 적재됐습니다. "
+        f"스펙과 조인하는 질의가 중복 수만큼 부풀어 오릅니다.\\n"
+        f"둘 다 KQL 쿼리셋에서 `.drop table {SPEC_TABLE}` 로 지운 뒤 "
+        "이 노트북을 다시 실행하면 됩니다."
+    )
 
 if READINGS:
     _reading_frame = spark.createDataFrame(

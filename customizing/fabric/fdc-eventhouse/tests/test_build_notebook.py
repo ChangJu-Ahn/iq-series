@@ -133,6 +133,20 @@ def test_spec_table_write_is_gated_on_its_own_row_count(notebook):
     assert 'MODE == "backfill"' not in load
 
 
+def test_spec_gate_rejects_partial_loads(notebook):
+    """0 이 아니면 무조건 건너뛰면 부분 적재가 영구히 방치된다.
+
+    스펙이 20행만 남으면 22개 조합이 빠지고, 그 센서의 판독 행은
+    `join kind=inner fdc_sensor_spec` 에서 조용히 사라진다. 중복은 행 수가
+    부풀어 눈에 띄지만 누락은 안 띈다. 워크숍에서 가장 나쁜 실패 유형이다.
+    """
+    load = next(c.source for c in notebook.cells if "spec_count_query()" in c.source)
+    assert "_spec_expected = len(SPEC_ROWS)" in load
+    assert "elif _spec_present == _spec_expected:" in load
+    assert load.count("raise RuntimeError") >= 2, "부분 적재에도 멈춰야 한다"
+    assert "drop table" in load, "복구 방법을 알려줘야 한다"
+
+
 def test_spec_count_is_not_indexed_blindly(notebook):
     """빈 결과에 [0] 을 바로 태우면 IndexError 로 죽는다.
 

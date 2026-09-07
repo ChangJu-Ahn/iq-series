@@ -175,8 +175,38 @@ def test_lot_id_stays_out_of_the_schema():
 
 
 def test_watermark_query_tolerates_missing_table():
-    """테이블이 없을 때 예외가 나면 '첫 실행' 과 '조회 실패' 를 못 가른다."""
-    assert "union isfuzzy=true" in watermark_query()
+    """테이블이 없을 때 예외가 나면 '첫 실행' 과 '조회 실패' 를 못 가른다.
+
+    `union isfuzzy=true` 문자열만 검사하면 안 된다. isfuzzy 는 여러 레그 중
+    일부가 없을 때만 무시하고, 공식 문서가 "If no resolutions were
+    successful, the query returns an error" 라고 명시한다. 레그가 실제
+    테이블 하나뿐이면 첫 실행에 쿼리가 그대로 실패한다.
+
+    앞선 구현이 정확히 그 상태였는데 문자열 검사만 하던 테스트가 통과시켰다.
+    항상 해석되는 datatable 레그가 있는지를 본다.
+    """
+    query = watermark_query()
+    assert "union isfuzzy=true" in query
+    assert "datatable(" in query, (
+        "레그가 실제 테이블 하나뿐이면 첫 실행에 쿼리가 에러를 낸다"
+    )
+    # datatable 레그가 union 안에, 테이블보다 앞에 와야 한다
+    assert query.index("datatable(") < query.index(READING_TABLE)
+    assert query.index("union") < query.index("datatable(")
+
+
+def test_watermark_query_datatable_leg_declares_the_column_it_aggregates():
+    """빈 결과에는 컬럼이 없어 max(reading_ts) 가 SEM0100 으로 죽는다.
+
+    스텁 레그가 집계 대상 컬럼을 실제 테이블과 같은 타입으로 선언해야 한다.
+    타입이 어긋나면 outer union 이 접미사 붙은 컬럼 두 개를 만들어
+    `reading_ts` 라는 이름 자체가 사라진다.
+    """
+    query = watermark_query()
+    declared = dict(READING_SCHEMA)["reading_ts"]
+    assert declared == "datetime", "스키마가 바뀌었으면 스텁 레그도 함께 바꿔야 한다"
+    assert f"datatable(reading_ts:{declared})[]" in query
+    assert "max(reading_ts)" in query
 
 
 def test_spec_count_query_counts_the_spec_table():
@@ -185,4 +215,5 @@ def test_spec_count_query_counts_the_spec_table():
     assert SPEC_TABLE in query
     assert READING_TABLE not in query
     assert "union isfuzzy=true" in query
+    assert "datatable(" in query
     assert "count()" in query

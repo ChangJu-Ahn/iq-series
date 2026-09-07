@@ -114,14 +114,30 @@ def to_rows(records: list[dict], columns: tuple[str, ...]) -> list[tuple]:
 
 
 def watermark_query(table: str = READING_TABLE) -> str:
-    """마지막으로 적재한 시각. 없으면 빈 결과가 아니라 null 한 행이 온다.
+    """마지막으로 적재한 시각. 테이블이 없으면 null 한 행이 온다.
 
-    `union isfuzzy=true` 로 감싸는 이유는 테이블이 아직 없을 때 예외 대신 빈
-    결과를 받기 위해서다. 그래야 '진짜 첫 실행' 과 '조회 실패' 를 구분할 수
-    있다. 구분하지 못하면 토큰 만료나 스로틀링 한 번이 전체 재백필로 이어지고
-    Eventhouse 는 유니크 제약이 없어 10만 행이 그대로 중복된다.
+    테이블이 없어도 예외를 내지 않아야 한다. 그래야 '진짜 첫 실행' 과 '조회
+    실패' 를 구분할 수 있다. 구분하지 못하면 토큰 만료나 스로틀링 한 번이
+    전체 재백필로 이어지고, Eventhouse 는 유니크 제약이 없어 10만 행이 그대로
+    중복된다.
+
+    `union isfuzzy=true` 만으로는 안 된다. isfuzzy 는 **여러 레그 중 일부**가
+    없을 때만 무시한다. 공식 문서가 명시한다.
+
+        If no resolutions were successful, the query returns an error.
+
+    레그가 실제 테이블 하나뿐이면 첫 실행에 그 하나가 없으므로 "성공한
+    해석 0건" 이 되어 쿼리 자체가 실패한다. 그래서 항상 해석되는 빈
+    `datatable` 레그를 하나 붙인다. 이 레그가 두 가지를 동시에 해결한다.
+
+    1. 해석 성공이 최소 1건이 되어 fuzzy union 이 성립한다
+    2. `reading_ts` 의 타입을 제공하므로 뒤따르는 `max(reading_ts)` 가
+       컬럼을 해석할 수 있다 (빈 결과에는 컬럼이 없어 SEM0100 으로 죽는다)
     """
-    return f"union isfuzzy=true {table} | summarize last_ts = max(reading_ts)"
+    return (
+        f"union isfuzzy=true (datatable(reading_ts:datetime)[]), {table}"
+        " | summarize last_ts = max(reading_ts)"
+    )
 
 
 def spec_count_query(table: str = SPEC_TABLE) -> str:
@@ -130,8 +146,15 @@ def spec_count_query(table: str = SPEC_TABLE) -> str:
     스펙 적재 여부를 판독 테이블의 watermark 로 판정하면 안 된다. 스펙 쓰기가
     판독 쓰기보다 먼저라, 판독 적재가 실패해 재실행될 때마다 스펙 42행이
     다시 쌓인다. 그러면 스펙과 조인하는 모든 질의가 중복 수만큼 팬아웃된다.
+
+    `watermark_query` 와 같은 이유로 빈 `datatable` 레그를 붙인다. 여기서는
+    `count()` 라 컬럼 참조가 없지만, 레그가 하나뿐이면 첫 실행에 쿼리가
+    에러를 내는 문제는 똑같다.
     """
-    return f"union isfuzzy=true {table} | summarize rows = count()"
+    return (
+        f"union isfuzzy=true (datatable(sensor_code:string)[]), {table}"
+        " | summarize rows = count()"
+    )
 
 
 # KQL 타입에 대응하는 Spark 타입. 데이터프레임 스키마를 명시하는 데 쓴다.

@@ -31,6 +31,13 @@ from src.fdc_sensors import sensors_for
 # 상한을 이보다 낮추면 안 되는 이유: 실제 픽스처에서 가장 깨끗한 설비의
 # 불량률이 0 이 아니라 0.167 이다. MIN 을 키우면 그 설비까지 경보에 닿아
 # test_lowest_severity_stays_below_min_alarm_ratio 가 깨진다.
+#
+# 이 여유는 구조적으로 얇다. 진폭이 설비 자신의 불량률만의 함수이므로 경계는
+# 불량률 축 위의 한 점인데, 가장 깨끗한 두 설비의 간격이 0.015 밖에 안 된다
+# (IMPL01 0.167 · PHOT01 0.182). 30개 조합을 실측해 본 결과 "7대 경보 + 최저
+# 설비 침묵" 을 지키며 얻을 수 있는 최대 여유가 0.056 이었다. 상수 선택 탓이
+# 아니라 데이터 구조 탓이므로, 여유를 늘리려면 여기가 아니라 MES 불량률
+# 분포를 손봐야 한다.
 EXCURSION_MIN = 1.0
 EXCURSION_MAX = 3.4
 
@@ -86,7 +93,7 @@ class EquipmentProfile:
     total_runs: int
     defect_runs: int
     defect_codes: dict[str, int]
-    severity: float  # 설비 집합 안에서의 상대 불량률. 0.0~1.0
+    severity: float  # 그 설비 자신의 불량률. defect_rate 와 같은 값이다
 
     @property
     def defect_rate(self) -> float:

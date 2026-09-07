@@ -226,17 +226,15 @@ def test_lowest_severity_stays_below_min_alarm_ratio(profiles):
 def test_amplitude_boundary_leaves_the_cleanest_equipment_quiet(profiles):
     """진폭 경계가 최저 설비 위에 있는지 확인한다.
 
-    진폭이 1.5(가장 좁은 경보 문턱) 아래라고 해서 그 설비가 반드시 조용한
-    것은 아니다. 값에는 자연 잡음이 얹히고 잡음이 경보까지 밀어 올릴 수
-    있다. 그래서 "경계 아래면 침묵" 같은 단정은 여기서 하지 않는다.
-    실제 침묵 여부는 생성된 데이터로 확인한다
-    (test_fdc_generator.py::test_cleanest_equipment_stays_quiet).
+    단언하는 것은 하나뿐이다. 가장 깨끗한 설비의 불량률이 "진폭 1.5" 에
+    대응하는 불량률보다 낮다는 것. 상수를 건드려 경계가 그 설비 아래로
+    내려오면 여기서 걸린다.
 
-    이 여유는 구조적으로 얇다. 진폭이 설비 자신의 불량률만의 함수이므로
-    경계는 불량률 축 위의 한 점이고, 픽스처에서 가장 깨끗한 두 설비의
-    불량률 차가 0.015 밖에 안 된다(IMPL01 0.167 · PHOT01 0.182). 상수를
-    어떻게 고르든 여유는 0.06 을 넘지 못한다. 실측으로 확인한 사실이고
-    상수 선택 탓이 아니다.
+    단언하지 **않는** 것: 이 설비가 실제로 조용하다는 것. 진폭이 1.5(가장
+    좁은 경보 문턱) 아래여도 값에 얹히는 자연 잡음이 경보까지 밀어 올릴 수
+    있다. 실제로 픽스처의 두 번째로 깨끗한 설비가 진폭 1.44 인데 경보가 난다.
+    침묵 여부는 생성된 데이터로 세야 한다
+    (test_fdc_generator.py::test_cleanest_equipment_stays_quiet).
     """
     cleanest = min(profiles.values(), key=lambda p: p.defect_rate)
     boundary = (1.5 - EXCURSION_MIN) / (EXCURSION_MAX - EXCURSION_MIN)
