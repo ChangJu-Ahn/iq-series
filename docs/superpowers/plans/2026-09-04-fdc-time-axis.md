@@ -81,7 +81,7 @@ Task 2 를 시작하기 전에 스펙 §5.2 를 이 결정으로 고친다(Task 
 
 ---
 
-### Task 0: 시간축 있는 픽스처를 만든다
+### ✅ Task 0: 시간축 있는 픽스처를 만든다
 
 MES 시드는 결정적이다. Azure 재배포를 기다리지 않고 로컬에서 시드를 돌려 픽스처를 뽑는다. 재배포는 실제 핸즈온 데이터에만 필요하다.
 
@@ -93,7 +93,7 @@ MES 시드는 결정적이다. Azure 재배포를 기다리지 않고 로컬에�
 **Interfaces:**
 - Produces: `process_results` 각 행에 서로 다른 `in_time`/`out_time`. 필드 구성과 업무 값(설비 배정·불량코드·판정)은 기존과 동일. `anchor` 키가 추가된다.
 
-- [ ] **Step 1: MES 쪽 변경이 들어와 있는지 확인한다**
+- [x] **Step 1: MES 쪽 변경이 들어와 있는지 확인한다**
 
 ```bash
 cd ~/Repo/mock-mes-kr && git --no-pager log --oneline -8 && ls mes_core/schedule.py
@@ -103,7 +103,7 @@ Expected: 시간축 커밋들이 보이고 `mes_core/schedule.py` 가 존재한�
 
 없으면 **여기서 멈춘다.** `mock-mes-kr` 의 `2026-09-04-mes-time-axis.md` 가 먼저 끝나고 머지돼야 한다.
 
-- [ ] **Step 2: 새 시드로 픽스처를 만든다**
+- [x] **Step 2: 새 시드로 픽스처를 만든다**
 
 앵커를 고정값으로 주고, 저장 시 `anchor` 를 함께 남긴다. 그래야 테스트가 특정 날짜에 묶이지 않는다(스펙 §5.6).
 
@@ -144,7 +144,7 @@ Expected: `공정이력 91건 · 고유 out_time 91`, 구간이 약 65시간, `�
 
 이 SQL 이 만드는 컬럼 집합이 기존 픽스처와 다르면(예: `step_name` 누락) 아래 Step 3 이 잡아낸다.
 
-- [ ] **Step 3: 기존 테스트로 회귀를 본다**
+- [x] **Step 3: 기존 테스트로 회귀를 본다**
 
 업무 데이터는 안 바뀌었으므로 **전부 통과한다.**
 
@@ -158,7 +158,7 @@ Expected: `252 passed`
 
 여기서 하나라도 깨지면 픽스처의 컬럼 집합이 달라진 것이므로 Step 2 로 돌아간다.
 
-- [ ] **Step 4: 커밋한다**
+- [x] **Step 4: 커밋한다**
 
 ```bash
 git add customizing/fabric/fdc-eventhouse/tests/fixtures/mes_facts.json
@@ -173,7 +173,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 
 ---
 
-### Task 1: 설비별 런 구간을 뽑는다
+### ✅ Task 1: 설비별 런 구간을 뽑는다
 
 **Files:**
 - Create: `src/fdc_runs.py`
@@ -189,7 +189,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
   - `run_at(runs: list[Run], moment: datetime) -> Run | None`
   - `span(facts) -> tuple[datetime, datetime]`
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 `tests/test_fdc_runs.py` 를 새로 만든다.
 
@@ -313,7 +313,7 @@ def test_real_defect_runs_exist(facts):
     assert sum(1 for r in runs if r.defect_code) > 10
 ```
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_runs.py -q 2>&1 | tail -5
@@ -321,7 +321,7 @@ cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_runs.py
 
 Expected: `ModuleNotFoundError: No module named 'src.fdc_runs'`
 
-- [ ] **Step 3: 구현한다**
+- [x] **Step 3: 구현한다**
 
 `src/fdc_runs.py` 를 새로 만든다.
 
@@ -423,7 +423,7 @@ def span(facts) -> tuple[datetime, datetime]:
     )
 ```
 
-- [ ] **Step 4: 노트북 모듈 목록에 등록한다**
+- [x] **Step 4: 노트북 모듈 목록에 등록한다**
 
 등록하지 않으면 노트북 안에서 `span` 과 `runs_by_equipment` 가 정의되지 않아 `NameError` 가 난다. `fdc_runs` 는 다른 `src` 모듈에 의존하지 않으므로 `mes_probe` 바로 뒤에 둔다.
 
@@ -441,7 +441,7 @@ MODULE_ORDER = (
 )
 ```
 
-- [ ] **Step 5: 셀 수 기대값을 고친다**
+- [x] **Step 5: 셀 수 기대값을 고친다**
 
 모듈이 하나 늘면 노트북 셀도 하나 는다. `tests/test_build_notebook.py::test_notebook_cell_count_is_stable` 의 마지막 리터럴만 바꾼다. 앞의 계산식은 `len(MODULE_ORDER)` 를 쓰므로 그대로 맞다.
 
@@ -452,7 +452,7 @@ MODULE_ORDER = (
 
 기존은 주석이 `6 modules`, 끝이 `== 15` 다.
 
-- [ ] **Step 6: 통과를 확인한다**
+- [x] **Step 6: 통과를 확인한다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 build_notebook.py && \
@@ -461,7 +461,7 @@ cd customizing/fabric/fdc-eventhouse && python3 build_notebook.py && \
 
 Expected: 전부 통과. `fdc_runs` 를 `MODULE_ORDER` 에 넣고 노트북을 다시 만들지 않으면 `test_notebook_matches_sources` 가 깨진다.
 
-- [ ] **Step 7: 커밋한다**
+- [x] **Step 7: 커밋한다**
 
 ```bash
 git add customizing/fabric/fdc-eventhouse/src/fdc_runs.py \
@@ -481,7 +481,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 
 ---
 
-### Task 2: 판독 스키마에 `run_status` 를 더한다
+### ✅ Task 2: 판독 스키마에 `run_status` 를 더한다
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-09-04-mes-fdc-time-axis-redesign.md` (§5.2)
@@ -491,7 +491,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 **Interfaces:**
 - Produces: `READING_COLUMNS` 와 `READING_SCHEMA` 에 `run_status: string` 이 `step_code` 뒤에 온다. `to_rows` 가 컬럼 순서대로 튜플을 만들므로 두 곳의 순서가 일치해야 한다.
 
-- [ ] **Step 1: 스펙 §5.2 를 고친다**
+- [x] **Step 1: 스펙 §5.2 를 고친다**
 
 스펙이 `lot_id` 를 추가하라고 적혀 있는 채로 두면 다음 사람이 되돌린다. §5.2 의 해당 문단을 아래로 바꾼다.
 
@@ -511,7 +511,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 로트는 `build_readings` 내부에서 이상 배치를 계산하는 데만 쓴다.
 ```
 
-- [ ] **Step 2: 실패하는 테스트를 쓴다**
+- [x] **Step 2: 실패하는 테스트를 쓴다**
 
 `tests/test_fdc_schema.py` 끝에 붙인다. 이 파일은 이미 `fdc_schema` 의 심볼을 개별 import 하고 있으므로, 파일 상단 import 에 `READING_TABLE`, `TABLE_DDL`, `spark_schema` 가 없으면 더한다.
 
@@ -543,7 +543,7 @@ def test_lot_id_stays_out_of_the_schema():
     assert "lot_id" not in {n for n, _ in READING_SCHEMA}
 ```
 
-- [ ] **Step 3: 실패를 확인한다**
+- [x] **Step 3: 실패를 확인한다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_schema.py -q 2>&1 | tail -8
@@ -551,7 +551,7 @@ cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_schema.
 
 Expected: `run_status` 관련 **4건 FAIL**(`has_run_status`, `follows_step_code`, `spark_schema`, `create_command`). `test_reading_columns_match_schema_order` 와 `test_lot_id_stays_out_of_the_schema` 는 지금도 PASS 한다 — 앞의 것은 두 상수가 아직 나란히 틀렸기 때문이고, 뒤의 것은 애초에 `lot_id` 가 없기 때문이다. 둘 다 앞으로 어긋남을 막는 가드다.
 
-- [ ] **Step 4: 컬럼을 더한다**
+- [x] **Step 4: 컬럼을 더한다**
 
 `src/fdc_schema.py` 의 `READING_COLUMNS` 를 아래로 바꾼다.
 
@@ -585,7 +585,7 @@ READING_SCHEMA: tuple[tuple[str, str], ...] = (
 )
 ```
 
-- [ ] **Step 5: 통과를 확인한다**
+- [x] **Step 5: 통과를 확인한다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_schema.py -q 2>&1 | tail -8
@@ -595,7 +595,7 @@ cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_schema.
 
 Expected: 신규 6건 전부 통과, 위 2건만 실패.
 
-- [ ] **Step 6: 커밋한다**
+- [x] **Step 6: 커밋한다**
 
 ```bash
 git add customizing/fabric/fdc-eventhouse/src/fdc_schema.py \
@@ -617,7 +617,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 
 ---
 
-### Task 3: 이상 주입을 런 단위로 좁힌다
+### ✅ Task 3: 이상 주입을 런 단위로 좁힌다
 
 지금은 설비에 붙은 불량코드를 전부 모아 40분 주기 사인파로 상시 이탈을 만든다. 그래서 "언제 이상해졌나"에 답할 수 없고, 이상 시점이 MES 의 어느 공정이력과도 대응하지 않는다.
 
@@ -639,7 +639,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 
 **왜 진폭 상한이 1.4 인가 (기존 불변식).** `tests/test_fdc_anomaly.py::test_lowest_severity_stays_below_min_alarm_ratio` 가 *"가장 깨끗한 설비는 경보(정상 반폭의 1.5배)에 닿지 말아야 한다"* 를 강제한다. 센서 스펙에서 경보 문턱이 가장 낮은 것이 Etcher `CHAMBER_TEMP` 의 1.67배이므로 1.5 는 안전한 하한이다. `excursion_amplitude` 는 severity 0 인 설비에 정확히 `EXCURSION_MIN` 을 주므로 **`EXCURSION_MIN` 은 반드시 1.5 미만이어야 한다.** 1.5 로 올리면 이 테스트가 깨지고, 동시에 "불량률 0 인 설비는 경보를 안 낸다"는 교육적 대비도 사라진다. 1.4 가 그 제약 안에서 가장 큰 값이다.
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 `tests/test_fdc_anomaly.py` 끝에 붙인다. 이 파일에는 이미 `profiles` 픽스처(module scope)가 있다.
 
@@ -748,7 +748,7 @@ def test_zero_length_run_does_not_divide_by_zero(profiles):
 
 파일 상단에 `from datetime import datetime, timedelta, timezone` 이 없으면 더한다. `sensors_for` 는 이미 import 돼 있다.
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_anomaly.py -q 2>&1 | tail -5
@@ -756,7 +756,7 @@ cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_anomaly
 
 Expected: `ImportError: cannot import name 'run_excursion' from 'src.fdc_anomaly'`
 
-- [ ] **Step 3: 기존 `excursion_for` 를 새 두 함수로 바꾼다**
+- [x] **Step 3: 기존 `excursion_for` 를 새 두 함수로 바꾼다**
 
 `src/fdc_anomaly.py` 상단 import 에 `datetime` 을 더한다.
 
@@ -828,7 +828,7 @@ def run_excursion(
     return excursion_sign(run.eqp_id, sensor_code) * excursion_amplitude(profile) * progress**2
 ```
 
-- [ ] **Step 3b: 진폭 상한을 올린다**
+- [x] **Step 3b: 진폭 상한을 올린다**
 
 센서를 하나만 고르게 되면서 희석(`share`)이 사라졌지만, 그것만으로는 데모가 서지 않았다. 프로토타입 실측에서 1.2~2.8 은 불량 런 31건 중 12건만 경보를 냈고 EQP-ETCH01 은 하나도 못 냈다.
 
@@ -842,7 +842,7 @@ EXCURSION_MAX = 2.9
 
 이 상수를 참조하는 기존 테스트(`test_excursion_within_declared_bounds`, `test_excursion_min_below_max`)는 값이 아니라 **심볼**을 보므로 그대로 통과한다.
 
-- [ ] **Step 4: 모듈 독스트링을 고친다**
+- [x] **Step 4: 모듈 독스트링을 고친다**
 
 파일 맨 위 독스트링의 "- 어디에: 불량코드가 지목하는 센서에만 이탈이 실린다" 아래에 한 줄을 더한다.
 
@@ -850,7 +850,7 @@ EXCURSION_MAX = 2.9
 - 언제: 불량이 난 그 런의 [in_time, out_time) 구간에만 실린다
 ```
 
-- [ ] **Step 5: `excursion_for` 를 쓰던 기존 테스트 3건을 이식한다**
+- [x] **Step 5: `excursion_for` 를 쓰던 기존 테스트 3건을 이식한다**
 
 `excursion_for` 가 사라졌으므로 import 와 호출부를 고쳐야 한다. 지우지 말고 옮긴다 — 세 테스트 모두 새 모델에서도 지켜야 할 불변식이다.
 
@@ -898,7 +898,7 @@ def test_lowest_severity_stays_below_min_alarm_ratio(profiles):
 
 `hinted_sensors` / `excursion_amplitude` / `excursion_sign` 테스트는 그대로 둔다.
 
-- [ ] **Step 6: 통과를 확인한다**
+- [x] **Step 6: 통과를 확인한다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_anomaly.py -q 2>&1 | tail -10
@@ -906,7 +906,7 @@ cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_anomaly
 
 Expected: 전부 통과.
 
-- [ ] **Step 7: 커밋한다**
+- [x] **Step 7: 커밋한다**
 
 ```bash
 git add customizing/fabric/fdc-eventhouse/src/fdc_anomaly.py \
@@ -923,7 +923,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 
 ---
 
-### Task 4: 단일 타임라인으로 가동/유휴를 나눠 생성한다
+### ✅ Task 4: 단일 타임라인으로 가동/유휴를 나눠 생성한다
 
 **Files:**
 - Modify: `src/fdc_sensors.py` (`idle_sensors`)
@@ -941,7 +941,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
   - `build_readings(facts, start, end) -> list[dict]` — 각 행에 `run_status`
   - `busy_window` 픽스처 → `(start, end)` — MES 구간 안의 24시간
 
-- [ ] **Step 1: 테스트 창을 MES 구간 안으로 옮긴다**
+- [x] **Step 1: 테스트 창을 MES 구간 안으로 옮긴다**
 
 `T0 = 2026-09-04T12:00Z` 는 이제 MES 구간(약 09-01 07:00 ~ 09-04 00:00) 밖이라 모든 행이 유휴가 된다. 다만 `grid_timestamps` 와 `to_iso` 테스트는 순수 함수라 T0 에 의존하지 않으므로 **그대로 둔다.** `build_readings` 를 부르는 곳만 옮긴다.
 
@@ -1056,7 +1056,7 @@ def readings(facts, busy_window):
     return build_readings(facts, start, start + timedelta(minutes=3))
 ```
 
-- [ ] **Step 2: 실패하는 테스트를 쓴다**
+- [x] **Step 2: 실패하는 테스트를 쓴다**
 
 `tests/test_fdc_generator.py` 끝에 붙인다.
 
@@ -1154,7 +1154,7 @@ def test_lot_id_never_leaks_into_rows(facts, busy_window):
 
 파일 상단 import 에 `span` 과 `sensors_for` 가 없으면 더한다.
 
-- [ ] **Step 3: 실패를 확인한다**
+- [x] **Step 3: 실패를 확인한다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_generator.py -q 2>&1 | tail -5
@@ -1162,7 +1162,7 @@ cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_generat
 
 Expected: `ImportError: cannot import name 'IDLE' from 'src.fdc_generator'`
 
-- [ ] **Step 4: 유휴 센서를 공개한다**
+- [x] **Step 4: 유휴 센서를 공개한다**
 
 `src/fdc_sensors.py` 의 `sensors_for` 아래에 더한다. `COMMON_SENSORS` 는 이미 공개 상수라 그대로 쓴다.
 
@@ -1177,7 +1177,7 @@ def idle_sensors() -> tuple[SensorDef, ...]:
     return COMMON_SENSORS
 ```
 
-- [ ] **Step 5: `fdc_generator.py` 를 고친다**
+- [x] **Step 5: `fdc_generator.py` 를 고친다**
 
 import 블록을 아래로 바꾼다.
 
@@ -1299,7 +1299,7 @@ def build_readings(facts, start: datetime, end: datetime) -> list[dict]:
     return rows
 ```
 
-- [ ] **Step 6: 전체 테스트를 돌린다**
+- [x] **Step 6: 전체 테스트를 돌린다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests -q 2>&1 | tail -15
@@ -1307,7 +1307,7 @@ cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests -q 2>&1 | tail -
 
 기존 테스트 중 "모든 설비 × 6센서 × 전체 격자" 를 전제한 행 수 계산이 있으면 지금 깨진다. 새 모델에 맞게 고친다. `reading_value` 를 4인자로 부르던 테스트는 `run` 이 기본값 `None` 이라 그대로 동작한다.
 
-- [ ] **Step 7: 볼륨과 경보 비율을 눈으로 확인한다**
+- [x] **Step 7: 볼륨과 경보 비율을 눈으로 확인한다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 - <<'PY'
@@ -1345,7 +1345,7 @@ MES 픽스처가 이 계획의 프로토타입과 정확히 같으면 숫자도 
 
 `Alarm` 이 `MAX_ALARM_RATIO`(5%) 를 넘으면 `EXCURSION_MAX` 를 낮추고, 0 이면 올린다. 단 **`EXCURSION_MIN` 은 1.5 미만을 유지해야 한다**(Task 3 참고). **테스트 기대값을 고쳐 맞추지 마라.**
 
-- [ ] **Step 7b: 신호가 실습에 쓸 만한지 확인한다**
+- [x] **Step 7b: 신호가 실습에 쓸 만한지 확인한다**
 
 행 수만으로는 부족하다. 경보가 불량 런에만 뜨는지, 유휴에 안 뜨는지를 본다. 이 셋이 README 데모의 전제다.
 
@@ -1402,7 +1402,7 @@ Expected:
 
 **검출률 71% 가 낮지 않은 이유:** FDC 가 불량을 전부 잡으면 MES 와 QMS 에 물을 이유가 없어진다. 9건은 센서에 안 잡히고 검사에서만 드러난다 — 세 시스템을 다 봐야 하는 실습 목적에 맞다.
 
-- [ ] **Step 8: 커밋한다**
+- [x] **Step 8: 커밋한다**
 
 ```bash
 git add customizing/fabric/fdc-eventhouse/src/ customizing/fabric/fdc-eventhouse/tests/
@@ -1421,7 +1421,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 
 ---
 
-### Task 5: 검증기가 `run_status` 를 본다
+### ✅ Task 5: 검증기가 `run_status` 를 본다
 
 **Files:**
 - Modify: `src/fdc_validate.py`
@@ -1431,7 +1431,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 - Consumes: Task 4 의 `RUNNING` / `IDLE`
 - Produces: `validate()` 가 돌려주는 `Check` 목록에 `run_status` 검사가 하나 추가된다. 번호는 기존 마지막 검사 다음이다.
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 `readings` / `checks` 픽스처는 Task 4 Step 1 에서 이미 `busy_window` 기반으로 옮겼다. 여기서는 테스트만 더한다. `tests/test_fdc_validate.py` 끝에 붙인다.
 
@@ -1467,7 +1467,7 @@ def test_lot_columns_still_forbidden(readings, facts):
     assert any(c.fatal and not c.passed for c in validate(rows, facts))
 ```
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_validate.py -q 2>&1 | tail -8
@@ -1475,7 +1475,7 @@ cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_validat
 
 Expected: `run_status` 검사 3건 FAIL. `test_clean_readings_have_no_fatal_check` 와 `test_lot_columns_still_forbidden` 은 PASS.
 
-- [ ] **Step 3: 검사를 더한다**
+- [x] **Step 3: 검사를 더한다**
 
 `src/fdc_validate.py` 상단 import 에 상태 상수를 더한다.
 
@@ -1529,7 +1529,7 @@ from src.fdc_sensors import (
 
 > `r.get("run_status")` 로 읽는 이유: 컬럼이 아예 없는 행이면 `None` 이 되어 `bad_status` 에 걸린다. `r["run_status"]` 로 읽으면 `KeyError` 로 죽어서 검증 보고서가 안 나온다.
 
-- [ ] **Step 3b: 검사 개수를 세던 기존 테스트 4건을 고친다**
+- [x] **Step 3b: 검사 개수를 세던 기존 테스트 4건을 고친다**
 
 검사가 8개에서 9개가 되므로 개수를 박아 둔 테스트가 깨진다. **구현이 아니라 기대값이 낡은 것이므로 기대값을 고치는 게 맞다.**
 
@@ -1545,7 +1545,7 @@ def test_fatal_flags_match_spec(checks):
 
 `test_unknown_sensor_does_not_crash_status_check` 와 `test_validate_handles_empty_readings` 의 `assert len(result) == 8` 을 `== 9` 로 바꾼다. 두 곳이다.
 
-- [ ] **Step 4: 샘플링 간격 검사를 확인한다**
+- [x] **Step 4: 샘플링 간격 검사를 확인한다**
 
 기존 검사 중 판독 간격이 `SAMPLE_INTERVAL_SEC` 라고 단정하는 것이 있으면 유휴 행 때문에 깨진다. 그런 검사는 **가동 행에만** 적용하도록 좁힌다.
 
@@ -1555,7 +1555,7 @@ cd customizing/fabric/fdc-eventhouse && grep -n "SAMPLE_INTERVAL_SEC" src/fdc_va
 
 걸리는 곳이 있으면 대상 목록을 `[r for r in readings if r.get("run_status") == RUNNING]` 으로 바꾸고, 검사 이름에 "(가동 구간)" 을 덧붙인다.
 
-- [ ] **Step 5: 통과를 확인한다**
+- [x] **Step 5: 통과를 확인한다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests -q 2>&1 | tail -8
@@ -1563,7 +1563,7 @@ cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests -q 2>&1 | tail -
 
 Expected: 전부 통과.
 
-- [ ] **Step 6: 커밋한다**
+- [x] **Step 6: 커밋한다**
 
 ```bash
 git add customizing/fabric/fdc-eventhouse/src/fdc_validate.py \
@@ -1580,7 +1580,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 
 ---
 
-### Task 6: 노트북 생성 구간을 MES 에 맞춘다
+### ✅ Task 6: 노트북 생성 구간을 MES 에 맞춘다
 
 24시간 캡이 남아 있으면 첫 백필이 최근 24시간만 남기고 워터마크가 `NOW` 로 간다. 건너뛴 구간은 **다시 채워지지 않는다.** MES 공정이력 대부분의 시간대가 영구히 비어서 교차 질의가 성립하지 않는다.
 
@@ -1591,7 +1591,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 **Interfaces:**
 - Produces: 첫 실행 범위가 `[MES min(in_time), NOW]`. 캡 없음.
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 `tests/test_build_notebook.py` 끝에 붙인다. 파일 상단에 `import build_notebook as bn` 이 없으면 더한다(모듈 자체를 참조해야 상수를 볼 수 있다).
 
@@ -1626,7 +1626,7 @@ def test_notebook_defines_span_before_it_is_used(notebook):
     assert source.index("def span(") < source.index("span(FACTS)")
 ```
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_build_notebook.py -q 2>&1 | tail -8
@@ -1634,7 +1634,7 @@ cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_build_noteb
 
 Expected: 캡 관련 3건과 `span(FACTS)` 관련 2건 FAIL. `MODULE_ORDER` 2건은 Task 1 에서 이미 통과.
 
-- [ ] **Step 3: 파라미터에서 벽시계 값을 뺀다**
+- [x] **Step 3: 파라미터에서 벽시계 값을 뺀다**
 
 `build_notebook.py` 의 `_PARAMETERS` 에서 아래 두 블록(주석 포함)을 지운다.
 
@@ -1649,7 +1649,7 @@ BACKFILL_HOURS = 24
 MAX_SPAN_HOURS = 24
 ```
 
-- [ ] **Step 4: 범위를 MES 에서 가져온다**
+- [x] **Step 4: 범위를 MES 에서 가져온다**
 
 `_WATERMARK` 의 아래 부분(`if WATERMARK is None:` 부터 마지막 `print` 까지)을 바꾼다.
 
@@ -1702,7 +1702,7 @@ if NOW > MES_TO:
 
 `timedelta` 는 셀 첫 줄 import 에 이미 있으므로 그대로 둔다. `span` 은 `fdc_runs` 가 인라인되면서 정의되므로 별도 import 가 필요 없다.
 
-- [ ] **Step 4b: 캡을 강제하던 기존 테스트를 뒤집는다**
+- [x] **Step 4b: 캡을 강제하던 기존 테스트를 뒤집는다**
 
 `tests/test_build_notebook.py::test_watermark_cell_caps_span` 이 캡의 존재를 강제한다. 캡을 없앴으니 이 테스트의 전제가 틀렸다. **지우지 말고 반대 불변식으로 바꾼다** — 다음 사람이 "구간이 길어지면 위험하다"며 캡을 되살리는 것을 막는 장치가 필요하다.
 
@@ -1714,7 +1714,7 @@ def test_watermark_cell_does_not_cap_span(notebook):
     assert "MES_FROM" in cell
 ```
 
-- [ ] **Step 5: 설명 문구를 고친다**
+- [x] **Step 5: 설명 문구를 고친다**
 
 `_INTRO` 에서 백필을 설명하는 문장을 찾는다.
 
@@ -1735,7 +1735,7 @@ cd customizing/fabric/fdc-eventhouse && grep -n "24시간\|백필" build_noteboo
 구분할 수 있습니다.
 ```
 
-- [ ] **Step 6: 노트북을 다시 만들고 전체를 돌린다**
+- [x] **Step 6: 노트북을 다시 만들고 전체를 돌린다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 build_notebook.py && python3 -m pytest tests -q 2>&1 | tail -8
@@ -1743,7 +1743,7 @@ cd customizing/fabric/fdc-eventhouse && python3 build_notebook.py && python3 -m 
 
 Expected: 노트북 생성 성공, 전부 통과.
 
-- [ ] **Step 7: 커밋한다**
+- [x] **Step 7: 커밋한다**
 
 ```bash
 git add customizing/fabric/fdc-eventhouse/
@@ -1759,12 +1759,12 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 
 ---
 
-### Task 7: 문서와 데모 시나리오를 고정한다
+### ✅ Task 7: 문서와 데모 시나리오를 고정한다
 
 **Files:**
 - Modify: `customizing/fabric/fdc-eventhouse/README.md`
 
-- [ ] **Step 1: 대표 시나리오를 실제 데이터에서 뽑는다**
+- [x] **Step 1: 대표 시나리오를 실제 데이터에서 뽑는다**
 
 ```bash
 cd customizing/fabric/fdc-eventhouse && python3 - <<'PY'
@@ -1804,7 +1804,7 @@ LOT0006 ETCH   EQP-ETCH01  Fail    Particle       09-02 07:26~09:14 → AMBIENT_
 
 같은 설비·같은 불량인데 흐른 센서가 다르다. `run_sensor` 가 런 단위로 고르기 때문이고, 이게 "설비가 아니라 그 런에서 무슨 일이 있었나"를 보게 만드는 지점이다. 대표 예로는 공정 센서가 걸린 첫 줄을 쓴다 — `AMBIENT_*` 는 클린룸 환경이라 설명이 한 단계 더 필요하다.
 
-- [ ] **Step 2: README 를 갱신한다**
+- [x] **Step 2: README 를 갱신한다**
 
 아래 내용을 담는다.
 
@@ -1832,7 +1832,7 @@ fdc_sensor_reading
   "<로트> 의 검사 이력과 NCR 을 보여줘"
 ```
 
-- [ ] **Step 3: 커밋한다**
+- [x] **Step 3: 커밋한다**
 
 ```bash
 git add customizing/fabric/fdc-eventhouse/README.md
@@ -1848,21 +1848,21 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 
 ## 완료 조건
 
-- [ ] `python3 -m pytest tests -q` 전부 통과 (Task 0 시점 기준선 **252건**, 신규 테스트만큼 늘어난다)
-- [ ] 픽스처의 고유 `out_time` 이 91개
-- [ ] 모든 판독 행에 `run_status` 가 있고 값이 `Run` / `Idle` 뿐
-- [ ] 유휴 행의 센서가 공통 2종뿐이고 5분 격자 위에 있음
-- [ ] **어떤 행에도 `lot_id` 가 없고, `fdc_validate` 의 무중복 검사가 그대로 살아 있음**
-- [ ] 한 `(eqp_id, sensor_code, reading_ts)` 가 중복되지 않음
-- [ ] 구간을 반으로 나눠 생성해도 통째로 생성한 것과 같음
-- [ ] `Alarm` 비율이 `MAX_ALARM_RATIO`(5%) 미만이고 0 이 아님
-- [ ] **`Alarm` 이 뜬 런이 전부 불량 런임 (정상 런 오탐 0)**
-- [ ] **유휴 구간에 `Alarm` 이 0 건**
-- [ ] `EXCURSION_MIN` 이 1.5 미만 (`test_lowest_severity_stays_below_min_alarm_ratio`)
-- [ ] `build_notebook.py` 에 `MAX_SPAN_HOURS` / `BACKFILL_HOURS` 가 없음
-- [ ] `MODULE_ORDER` 에 `fdc_runs` 가 `fdc_generator` 보다 앞에 있음
-- [ ] `python3 build_notebook.py` 가 노트북을 다시 만듦 (셀 16개)
-- [ ] README 의 대표 시나리오가 실제 데이터에서 뽑은 값
+- [x] `python3 -m pytest tests -q` 전부 통과 (기준선 252건 → **310건**)
+- [x] 픽스처의 고유 `out_time` 이 91개
+- [x] 모든 판독 행에 `run_status` 가 있고 값이 `Run` / `Idle` 뿐
+- [x] 유휴 행의 센서가 공통 2종뿐이고 5분 격자 위에 있음
+- [x] **어떤 행에도 `lot_id` 가 없고, `fdc_validate` 의 무중복 검사가 그대로 살아 있음**
+- [x] 한 `(eqp_id, sensor_code, reading_ts)` 가 중복되지 않음
+- [x] 구간을 반으로 나눠 생성해도 통째로 생성한 것과 같음
+- [x] `Alarm` 비율이 `MAX_ALARM_RATIO`(5%) 미만이고 0 이 아님
+- [x] **`Alarm` 이 뜬 런이 전부 불량 런임 (정상 런 오탐 0)**
+- [x] **유휴 구간에 `Alarm` 이 0 건**
+- [x] `EXCURSION_MIN` 이 1.5 미만 (`test_lowest_severity_stays_below_min_alarm_ratio`)
+- [x] `build_notebook.py` 에 `MAX_SPAN_HOURS` / `BACKFILL_HOURS` 가 없음
+- [x] `MODULE_ORDER` 에 `fdc_runs` 가 `fdc_generator` 보다 앞에 있음
+- [x] `python3 build_notebook.py` 가 노트북을 다시 만듦 (셀 16개)
+- [x] README 의 대표 시나리오가 실제 데이터에서 뽑은 값
 
 ## 이 계획은 프로토타입으로 실증되었다
 
@@ -1876,7 +1876,7 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 | 런 | 84 (불량 31 · 정상 53) |
 | 경보 난 런 | 22 — 전부 불량 런, **오탐 0** |
 | 유휴 중 경보 | 0행 |
-| 검증기 | 치명 0 · 경고 0 / 8건 전부 OK |
+| 검증기 | 치명 0 · 경고 0 / 8건 전부 OK (구현 후 9건) |
 | 테스트 | **252 passed** |
 
 프로토타입이 계획의 결함 네 가지를 잡았고 전부 위 본문에 반영했다.
@@ -1899,3 +1899,39 @@ Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 - `MES_API_KEY` 를 노트북 셀에 붙여넣어야 한다. Fabric 노트북은 자동 저장되고 작업 영역은 공유될 수 있다. 실행 후 지우라고 안내한다.
 - MES 앵커가 배포 시점에 고정되므로 데이터는 나이를 먹는다. 코호트마다 재배포한다.
 - METRO 공정에는 FDC 데이터가 없다.
+
+## 실행 결과 (2026-09-07)
+
+Task 0~7 전부 완료. 완료 조건 16항목 전수 검증 통과.
+
+```
+테스트  310 passed
+구간    64.8h (2026-09-01 07:13 ~ 09-04 00:00)
+총 행   102,552 (가동 93,210 · 유휴 9,342)
+        Normal 100,990 (98.48%) · Warning 1,305 (1.27%) · Alarm 257 (0.25%)
+런      84 (불량 31 · 정상 53) · 경보 난 런 22 · 정상 런 오탐 0 · 유휴 경보 0
+검증    9건 전부 OK (치명 0 · 경고 0)
+```
+
+프로토타입 예측과 한 자리도 어긋나지 않았다.
+
+### 노트북을 실제로 실행해 봤다
+
+`fdc_eventhouse_stream.ipynb` 의 16셀 중 외부 의존(Kusto 커넥터·`mssparkutils`·
+MES HTTP) 4셀만 스텁하고 나머지를 전부 실행했다. 워터마크 셀이 `span(FACTS)` 로
+MES 구간을 잡고, 배포 후 경과분을 유휴로 채워 117,032행을 만들었으며, `to_rows`
+9열과 검증 9건이 전부 통과했다. Fabric 밖에서 확인할 수 있는 범위는 여기까지다.
+
+### 계획에 없던 발견
+
+| 항목 | 내용 |
+|---|---|
+| `test_watermark_cell_caps_span` | 캡의 존재를 강제하던 기존 테스트. 캡을 없앴으니 전제가 틀렸다. 지우지 않고 반대 불변식(`test_watermark_cell_does_not_cap_span`)으로 뒤집어 캡 부활을 막았다. Task 6 Step 4b 로 계획서에도 넣었다 |
+| `data-agent-schema.md` | 계획이 언급하지 않은 파일. 에이전트에게 **"시간으로 조인하지 마세요"** 라고 지시하고 있었다. 이 문서가 데모 동작을 직접 좌우하므로 함께 뒤집었다 |
+| `ago(24h)` 필터 | README·노트북·에이전트 문서의 KQL 예시 전부에 있었다. 가동 구간이 과거라 빈 결과를 낸다. 전부 걷어내고 "구간부터 확인하라"는 쿼리를 앞에 뒀다 |
+
+### 남은 일 (자율 불가)
+
+- `ChangJu-Ahn/mock-mes-kr#3` 리뷰·머지
+- 머지 후 `az deployment group create` 재배포
+- Fabric 에서 노트북 실제 실행 (Kusto 커넥터 사전 설치 여부, `mssparkutils.credentials.getToken()`)
