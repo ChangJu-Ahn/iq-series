@@ -16,6 +16,7 @@ import nbformat
 
 MODULE_ORDER = (
     "mes_probe",
+    "fdc_runs",
     "fdc_sensors",
     "fdc_anomaly",
     "fdc_generator",

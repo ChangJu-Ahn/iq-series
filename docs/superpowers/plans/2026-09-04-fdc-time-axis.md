@@ -468,7 +468,7 @@ git add customizing/fabric/fdc-eventhouse/src/fdc_runs.py \
         customizing/fabric/fdc-eventhouse/tests/test_fdc_runs.py \
         customizing/fabric/fdc-eventhouse/tests/test_build_notebook.py \
         customizing/fabric/fdc-eventhouse/build_notebook.py \
-        customizing/fabric/fdc-eventhouse/cookbook/fdc_eventhouse_seed.ipynb
+        customizing/fabric/fdc-eventhouse/fdc_eventhouse_stream.ipynb
 git -c user.name="Copilot App" -c user.email="223556219+Copilot@users.noreply.github.com" \
   commit -m "공정이력에서 설비별 런 구간을 뽑는다
 

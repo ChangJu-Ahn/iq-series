@@ -162,5 +162,5 @@ def test_outro_has_runnable_kql(notebook):
 
 
 def test_notebook_cell_count_is_stable(notebook):
-    # intro + parameters + 6 modules + gate + connect + watermark + build + validate + load + outro
-    assert len(notebook.cells) == 1 + 1 + len(MODULE_ORDER) + 6 + 1 == 15
+    # intro + parameters + 7 modules + gate + connect + watermark + build + validate + load + outro
+    assert len(notebook.cells) == 1 + 1 + len(MODULE_ORDER) + 6 + 1 == 16
