@@ -176,9 +176,10 @@ try:
     WATERMARK = _row[0]["last_ts"] if _row else None
 except Exception as exc:
     # 여기서 첫 실행으로 간주하고 넘어가면 안 됩니다. watermark_query 는
-    # 테이블이 없어도 예외를 내지 않으므로(union isfuzzy) 여기 온 예외는
-    # 토큰 만료·스로틀링·네트워크 같은 일시적 실패입니다. 백필로 떨어지면
-    # 이미 적재된 10만 행을 통째로 다시 씁니다. 멈추는 편이 낫습니다.
+    # 테이블이 없어도 예외를 내지 않습니다(항상 해석되는 datatable 레그를
+    # 붙여 뒀습니다). 그러므로 여기 온 예외는 토큰 만료·스로틀링·네트워크
+    # 같은 일시적 실패입니다. 백필로 떨어지면 이미 적재된 10만 행을 통째로
+    # 다시 씁니다. 멈추는 편이 낫습니다.
     raise RuntimeError(
         "watermark 조회에 실패해 중단합니다. 첫 실행으로 간주하면 이미 적재된"
         " 구간을 다시 써서 중복이 쌓입니다(Eventhouse 는 유니크 제약이 없습니다)."
@@ -187,7 +188,30 @@ except Exception as exc:
     ) from exc
 
 if WATERMARK is not None and WATERMARK.tzinfo is None:
-    WATERMARK = WATERMARK.replace(tzinfo=timezone.utc)
+    # replace() 로 UTC 라벨만 붙이면 안 됩니다. PySpark 의 TimestampType 은
+    # 쓰기와 읽기가 비대칭입니다. 쓸 때는 tz-aware 를 넘기므로 calendar.timegm
+    # 을 타서 UTC 로 저장되지만, 읽을 때는 datetime.fromtimestamp(ts) 를 tz
+    # 인자 없이 부르므로 **드라이버 OS 의 로컬 시각**이 naive 로 돌아옵니다.
+    #
+    # 그래서 라벨만 바꾸면 드라이버가 UTC 가 아닐 때 watermark 가 오프셋만큼
+    # 통째로 어긋납니다. 서울(+9)이면 미래로 가서 그 구간이 영구히 비고,
+    # LA(-7)이면 과거로 가서 매 실행이 수천 행을 중복 적재합니다. 쿼리는
+    # 성공하고 값만 틀리기 때문에 앞의 어떤 방어도 이걸 잡지 못합니다.
+    #
+    # naive 에 astimezone 을 쓰면 시스템 로컬로 해석해 변환하므로
+    # fromtimestamp 가 한 일을 정확히 되돌립니다.
+    WATERMARK = WATERMARK.astimezone(timezone.utc)
+
+# watermark 는 우리가 과거에 쓴 행에서 나오므로 미래일 수 없습니다. 미래라면
+# 드라이버 타임존이나 시계가 어긋난 것입니다. 그냥 두면 START > NOW 가 되어
+# 매 실행이 0행을 쓰고 "새로 만들 구간이 없습니다" 만 반복하다가 그 구간을
+# 영구히 잃습니다. 조용히 잃느니 여기서 시끄럽게 멈춥니다.
+if WATERMARK is not None and WATERMARK > NOW + timedelta(minutes=5):
+    raise RuntimeError(
+        f"watermark({WATERMARK})가 현재 시각({NOW})보다 미래입니다. "
+        "우리가 쓴 행에서 나온 값이므로 있을 수 없습니다. Spark 드라이버의 "
+        "타임존이나 시계를 확인하세요. 이대로 두면 그 사이 구간이 영구히 빕니다."
+    )
 
 # 첫 실행은 MES 공정이력이 시작하는 시각부터 채웁니다. 벽시계 기준으로 최근
 # 몇 시간만 채우면 MES 가 아는 구간과 겹치지 않아서, 센서에서 찾은 이상을

@@ -1,5 +1,7 @@
 import ast
 import re
+from datetime import datetime
+from datetime import timezone as dt_timezone
 from pathlib import Path
 
 import nbformat
@@ -131,6 +133,70 @@ def test_spec_table_write_is_gated_on_its_own_row_count(notebook):
     assert "spec_count_query()" in load
     assert "_spec_present == 0" in load
     assert 'MODE == "backfill"' not in load
+
+
+def test_watermark_is_converted_not_relabelled(notebook):
+    """naive 를 UTC 로 '라벨만' 붙이면 드라이버 타임존만큼 어긋난다.
+
+    PySpark TimestampType 은 쓰기와 읽기가 비대칭이다. 쓸 때는 tz-aware 라
+    calendar.timegm 을 타서 UTC 로 저장되지만, 읽을 때는
+    datetime.fromtimestamp(ts) 를 tz 인자 없이 부르므로 드라이버 OS 로컬
+    시각이 naive 로 돌아온다. replace(tzinfo=utc) 는 값을 그대로 두고 라벨만
+    바꾸므로 오프셋만큼 통째로 어긋난다.
+    """
+    cell = next(c.source for c in notebook.cells if "WATERMARK.tzinfo is None" in c.source)
+    assert "astimezone(timezone.utc)" in cell
+    assert "replace(tzinfo=timezone.utc)" not in cell, (
+        "라벨만 바꾸면 드라이버가 UTC 가 아닐 때 중복 적재나 영구 누락이 난다"
+    )
+
+
+def test_future_watermark_is_rejected(notebook):
+    """watermark 는 우리가 쓴 행에서 나오므로 미래일 수 없다.
+
+    미래면 START > NOW 가 되어 매 실행이 0행을 쓰고 그 구간을 영구히 잃는다.
+    화면에는 "새로 만들 구간이 없습니다" 만 뜨므로 아무도 눈치채지 못한다.
+    """
+    cell = next(c.source for c in notebook.cells if "WATERMARK.tzinfo is None" in c.source)
+    assert "WATERMARK > NOW" in cell
+    assert "raise RuntimeError" in cell.split("WATERMARK > NOW")[1][:400]
+
+
+@pytest.mark.parametrize(
+    "tz", ["UTC", "Asia/Seoul", "America/Los_Angeles", "Europe/Berlin", "Asia/Kolkata"]
+)
+def test_watermark_round_trip_survives_any_driver_timezone(tz):
+    """노트북이 쓰는 변환을 실제 타임존에서 왕복시켜 본다.
+
+    문자열 검사가 아니라 의미를 검사한다. PySpark 의 toInternal/fromInternal
+    을 그대로 재현해, 우리가 쓴 시각이 어떤 드라이버 타임존에서도 원래 값으로
+    돌아오는지 확인한다.
+    """
+    import calendar
+    import os
+    import time
+
+    written = datetime(2026, 9, 4, 0, 0, tzinfo=dt_timezone.utc)
+    # PySpark TimestampType.toInternal — tz-aware 라 timegm 을 탄다
+    internal = int(calendar.timegm(written.utctimetuple())) * 1000000 + written.microsecond
+
+    old = os.environ.get("TZ")
+    try:
+        os.environ["TZ"] = tz
+        time.tzset()
+        # PySpark TimestampType.fromInternal — tz 인자 없는 fromtimestamp
+        naive = datetime.fromtimestamp(internal // 1000000).replace(
+            microsecond=internal % 1000000
+        )
+        assert naive.tzinfo is None
+        recovered = naive.astimezone(dt_timezone.utc)
+        assert recovered == written, f"{tz} 에서 {recovered} != {written}"
+    finally:
+        if old is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old
+        time.tzset()
 
 
 def test_write_mode_is_pinned_to_transactional(notebook):

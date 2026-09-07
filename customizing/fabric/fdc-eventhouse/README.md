@@ -221,6 +221,22 @@ https://trd-xxxxxxx.z9.kusto.fabric.microsoft.com
 Query URI는 비밀값이 아닙니다. 인증은 `mssparkutils.credentials.getToken()` 이 실행자
 신원으로 토큰을 발급해 처리하므로 **복사해 둘 키가 없습니다.**
 
+이어서 같은 페이지의 **KQL 쿼리셋**에 아래 두 줄을 붙여넣고 실행해 테이블을 미리
+만듭니다.
+
+```kusto
+.create-merge table fdc_sensor_spec (sensor_code:string, sensor_name_ko:string, eqp_type:string, unit:string, normal_min:real, normal_max:real, alarm_min:real, alarm_max:real, sample_interval_sec:int, is_active:bool)
+.create-merge table fdc_sensor_reading (reading_ts:datetime, eqp_id:string, eqp_type:string, step_code:string, run_status:string, sensor_code:string, value:real, unit:string, status:string)
+```
+
+**노트북이 알아서 만들기 때문에 꼭 필요한 단계는 아니지만, 해 두면 좋습니다.**
+노트북은 첫 실행에서 "아직 테이블이 없는" 상태를 다뤄야 하는데, 그 경로만은 실제
+Eventhouse 없이 검증할 수 없습니다(아래 "알려진 한계" 참고). 미리 만들어 두면 그
+상태 자체가 사라져서 첫 실행이 두 번째 실행과 똑같은 평범한 경로를 탑니다.
+
+`.create-merge` 는 멱등이라 여러 번 실행해도 안전하고, 이미 있는 테이블의 데이터를
+지우지 않습니다. 컬럼 타입은 노트북이 쓰는 것과 같습니다.
+
 ### 2. 노트북 가져오기
 
 `fdc_eventhouse_stream.ipynb` 를 작업 영역에 업로드합니다. 파일 업로드나
@@ -235,8 +251,10 @@ KUSTO_DATABASE = "fdc"
 MES_API_KEY = "..."
 ```
 
-전체 실행하면 첫 실행에서 MES 공정이력 구간 전체(약 65시간, 10만 행 안팎)를 백필하고
-테이블 2개를 만듭니다. 이후 실행은 마지막으로 적재한 시각부터 지금까지만 채웁니다.
+전체 실행하면 첫 실행에서 **MES 공정이력이 시작하는 시각부터 지금까지**를 백필하고
+테이블 2개를 만듭니다. 배포 직후라면 공정이력 구간 65시간이 거의 전부라 10만 행
+안팎이고, 배포 후 며칠이 지났다면 그 사이가 유휴로 채워져 하루 약 4,608행씩 더
+붙습니다. 이후 실행은 마지막으로 적재한 시각부터 지금까지만 채웁니다.
 
 > **`MES_API_KEY` 는 노트북 셀에 남습니다.** Fabric 노트북은 자동 저장되고 작업
 > 영역은 공유될 수 있습니다. 스케줄을 걸어 계속 돌릴 것이 아니라면 실행 후 이 줄을
@@ -352,6 +370,10 @@ fdc_sensor_reading
 이 동작은 단위 테스트로 재현할 수 없습니다. 테스트도 노트북 하네스도 Kusto 를
 스텁하므로 같은 가정을 되풀이할 뿐입니다. **두 쿼리를 바꾸게 되면 테이블이 없는
 빈 데이터베이스에 대고 KQL 쿼리셋에서 직접 실행해 확인하세요.**
+
+이 가정이 신경 쓰인다면 **위 1단계에서 테이블을 미리 만들어 두세요.** 그러면
+"테이블 없음" 상태 자체가 사라져서 이 경로를 아예 타지 않습니다. 20명이 한꺼번에
+도는 워크숍이라면 붙여넣기 한 번으로 검증 불가능한 가정 하나를 없애는 셈입니다.
 **설비 상태는 `Run` / `Idle` 둘뿐입니다.** SEMI E10 은 여섯 가지를 정의하지만
 예방정비(PM)나 고장 정지는 모델에 없습니다. 확산로 배치 공정(여러 로트 동시 투입)도
 다루지 않습니다. 한 시각에 설비 하나는 런 하나만 처리합니다.

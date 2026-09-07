@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -217,3 +218,15 @@ def test_spec_count_query_counts_the_spec_table():
     assert "union isfuzzy=true" in query
     assert "datatable(" in query
     assert "count()" in query
+
+
+def test_readme_ddl_matches_the_schema():
+    """README 가 참가자에게 붙여넣게 하는 DDL 이 실제 스키마와 같아야 한다.
+
+    README 는 1단계에서 테이블을 미리 만들라고 안내한다. 그 DDL 이 코드와
+    어긋나면 참가자가 틀린 타입의 테이블을 만들고, 노트북 적재가 실패하거나
+    더 나쁘게는 조용히 캐스팅된다. 두 정의를 여기서 묶어 둔다.
+    """
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+    for name, ddl in TABLE_DDL.items():
+        assert ddl in readme, f"README 의 {name} DDL 이 스키마와 다릅니다"
