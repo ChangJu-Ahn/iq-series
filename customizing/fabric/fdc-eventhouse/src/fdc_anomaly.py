@@ -5,15 +5,21 @@
 맞아떨어지지 않는다. 그래서 이탈의 크기와 대상 센서를 MES 실적에서 끌어온다.
 
 - 얼마나: 설비의 불량률이 높을수록 이탈 진폭이 크다
-- 어디에: 불량코드가 지목하는 센서에만 이탈이 실린다
+- 어디에: 불량코드가 지목하는 센서 중 **런마다 하나**에만 이탈이 실린다
+- 언제: 불량이 난 그 런의 `[in_time, out_time)` 구간에만 실린다
 
 결과적으로 "CHAMBER_TEMP 가 튀는 설비"를 Eventhouse에서 찾으면 그 설비가
-MES에서 실제로 불량이 많은 설비다. 두 시스템을 교차 질의할 이유가 생긴다.
+MES에서 실제로 불량이 많은 설비다. 나아가 **경보가 뜬 시각**을 MES에 물으면
+그때 돌던 로트가 나온다. 두 시스템을 교차 질의할 이유가 생긴다.
+
+FDC 는 로트를 모른다 — 판독값에 `lot_id` 를 남기지 않는다. 로트는 이 모듈이
+이상을 어디에 실을지 정하는 계산에만 쓴다.
 """
 
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from dataclasses import dataclass
 
 from src.fdc_sensors import sensors_for
@@ -21,11 +27,9 @@ from src.fdc_sensors import sensors_for
 # 이탈 진폭. 정상범위 반폭을 1.0 으로 보는 단위다.
 # 경보 임계는 정상 반폭의 1.5~3.0 배에 있으므로 1.2 는 경고까지만, 2.8 은
 # 경보까지 닿는다. 불량률이 가장 낮은 설비와 높은 설비를 이 두 값에 맞춘다.
-EXCURSION_MIN = 1.2
-EXCURSION_MAX = 2.8
+EXCURSION_MIN = 1.4
+EXCURSION_MAX = 2.9
 
-# 이탈이 최대치에 머무는 시간 비율을 정하는 주기(초). 40분.
-EXCURSION_PERIOD_SEC = 2400
 
 # 불량코드가 지목하는 센서. 물리적 인과가 성립하는 것만 넣는다(설계 스펙 7.2).
 DEFECT_SENSOR_HINT: dict[str, tuple[str, ...]] = {
@@ -168,13 +172,58 @@ def excursion_amplitude(profile: EquipmentProfile) -> float:
     return EXCURSION_MIN + (EXCURSION_MAX - EXCURSION_MIN) * profile.severity
 
 
-def excursion_for(profile: EquipmentProfile, sensor_code: str) -> float:
-    """센서별 이탈 진폭. 정상범위 반폭 단위. 지목되지 않은 센서는 0.0."""
-    share = hinted_sensors(profile).get(sensor_code, 0.0)
-    if share <= 0.0:
+def candidate_sensors(defect_code: str | None, eqp_type: str) -> tuple[str, ...]:
+    """이 불량이 지목하는 센서 중 그 설비에 실제로 달린 것.
+
+    Mock MES 는 불량코드를 공정과 무관하게 붙인다. Implanter 에 Scratch 가
+    달리면 지목 센서가 하나도 없고, 그때는 모든 유형이 갖는 AMBIENT_TEMP 로
+    넘긴다. 클린룸 열관리 실패는 실제로 여러 불량의 공통 원인이다.
+    """
+    if not defect_code:
+        return ()
+    available = {s.sensor_code for s in sensors_for(eqp_type)}
+    hinted = tuple(
+        s for s in DEFECT_SENSOR_HINT.get(defect_code, ()) if s in available
+    )
+    if hinted:
+        return hinted
+    chosen = fallback_sensor(eqp_type)
+    return (chosen,) if chosen else ()
+
+
+def run_sensor(run, eqp_type: str) -> str | None:
+    """이 런에서 실제로 흐르는 센서 하나. 불량이 없으면 None.
+
+    후보 전부에 이탈을 나눠 실으면 진폭이 희석돼 어느 쪽도 경보에 못 닿는다.
+    실제 공정 이탈도 보통 파라미터 하나가 흐르지 여러 개가 동시에 흐르지
+    않는다. 런 식별자로 고르므로 같은 설비·같은 불량이라도 런마다 다른
+    센서가 걸려 실습 소재가 다양해진다.
+    """
+    candidates = candidate_sensors(run.defect_code, eqp_type)
+    if not candidates:
+        return None
+    index = seed(run.lot_id, run.step_code, run.eqp_id, run.defect_code)
+    return candidates[index % len(candidates)]
+
+
+def run_excursion(
+    run, sensor_code: str, moment: datetime, profile: EquipmentProfile
+) -> float:
+    """런 구간 안의 이탈량. 정상범위 반폭이 1.0 인 단위.
+
+    런이 진행될수록 커진다(progress 의 제곱). 공정이 서서히 이탈하다 끝에서
+    불량으로 잡히는 모습이라 실습자에게 설명하기 쉽고, 런 앞부분이 잠잠해서
+    경보가 끊이지 않는 일도 없다.
+    """
+    if not run.start <= moment < run.end:
         return 0.0
-    # 지목이 여러 센서로 분산되면 개별 센서의 이탈은 옅어진다.
-    return excursion_amplitude(profile) * (0.5 + 0.5 * share)
+    if sensor_code != run_sensor(run, profile.eqp_type):
+        return 0.0
+    length = (run.end - run.start).total_seconds()
+    if length <= 0:
+        return 0.0
+    progress = (moment - run.start).total_seconds() / length
+    return excursion_sign(run.eqp_id, sensor_code) * excursion_amplitude(profile) * progress**2
 
 
 def excursion_sign(eqp_id: str, sensor_code: str) -> int:

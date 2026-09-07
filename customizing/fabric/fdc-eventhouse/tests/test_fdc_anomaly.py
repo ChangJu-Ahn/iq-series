@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -10,7 +11,9 @@ from src.fdc_anomaly import (
     FALLBACK_SENSOR,
     build_profiles,
     excursion_amplitude,
-    excursion_for,
+    candidate_sensors,
+    run_excursion,
+    run_sensor,
     excursion_sign,
     fallback_sensor,
     hinted_sensors,
@@ -99,19 +102,21 @@ def test_every_equipment_has_at_least_one_hinted_sensor(profiles):
         assert hinted_sensors(profile), profile.eqp_id
 
 
-def test_unhinted_sensor_has_zero_excursion(profiles):
+def test_unselected_sensor_has_zero_excursion(profiles):
     profile = profiles["EQP-CMP01"]
-    hinted = hinted_sensors(profile)
+    run = _demo_run(profile.eqp_id)
+    chosen = run_sensor(run, profile.eqp_type)
     for sensor in sensors_for(profile.eqp_type):
-        if sensor.sensor_code not in hinted:
-            assert excursion_for(profile, sensor.sensor_code) == 0.0
+        if sensor.sensor_code != chosen:
+            assert run_excursion(run, sensor.sensor_code, run.end - _ONE_SEC, profile) == 0.0
 
 
 def test_excursion_within_declared_bounds(profiles):
     for profile in profiles.values():
-        for sensor_code in hinted_sensors(profile):
-            value = excursion_for(profile, sensor_code)
-            assert 0.0 < value <= EXCURSION_MAX
+        run = _demo_run(profile.eqp_id)
+        chosen = run_sensor(run, profile.eqp_type)
+        value = abs(run_excursion(run, chosen, run.end - _ONE_SEC, profile))
+        assert 0.0 < value <= EXCURSION_MAX
 
 
 def test_worse_equipment_excurses_harder(profiles):
@@ -153,8 +158,9 @@ def test_fallback_sensor_exists_on_every_type():
 def test_lowest_severity_stays_below_min_alarm_ratio(profiles):
     """가장 깨끗한 설비는 경보(정상 반폭의 1.5배)에 닿지 말아야 한다."""
     profile = profiles["EQP-IMPL01"]
-    for sensor_code in hinted_sensors(profile):
-        assert excursion_for(profile, sensor_code) < 1.5
+    run = _demo_run(profile.eqp_id)
+    chosen = run_sensor(run, profile.eqp_type)
+    assert abs(run_excursion(run, chosen, run.end - _ONE_SEC, profile)) < 1.5
 
 
 def test_excursion_sign_is_deterministic_and_mixed(profiles):
@@ -189,3 +195,114 @@ def test_hint_targets_are_real_sensor_codes():
 
 def test_excursion_min_below_max():
     assert 0 < EXCURSION_MIN < EXCURSION_MAX
+
+
+from src.fdc_anomaly import candidate_sensors, run_excursion, run_sensor
+from src.fdc_runs import Run
+
+_START = datetime(2026, 9, 3, 1, tzinfo=timezone.utc)
+_END = datetime(2026, 9, 3, 2, tzinfo=timezone.utc)
+
+
+def _run(defect="Particle", eqp="EQP-ETCH01"):
+    return Run(eqp_id=eqp, lot_id="LOT0010", step_code="ETCH",
+               start=_START, end=_END, defect_code=defect)
+
+
+def test_candidate_sensors_picks_hinted_sensor_present_on_tool():
+    assert "CHAMBER_TEMP" in candidate_sensors("Particle", "Etcher")
+
+
+def test_candidate_sensors_is_empty_without_defect():
+    assert candidate_sensors(None, "Etcher") == ()
+
+
+def test_candidate_sensors_falls_back_when_hint_is_absent():
+    """Scratch 는 Implanter 에 없는 센서만 가리킨다."""
+    assert candidate_sensors("Scratch", "Implanter") == ("AMBIENT_TEMP",)
+
+
+def test_candidate_sensors_unknown_defect_falls_back():
+    assert candidate_sensors("No-Such-Defect", "Etcher") == ("AMBIENT_TEMP",)
+
+
+def test_run_sensor_picks_exactly_one_candidate():
+    chosen = run_sensor(_run(), "Etcher")
+    assert chosen in candidate_sensors("Particle", "Etcher")
+
+
+def test_run_sensor_is_none_without_defect():
+    assert run_sensor(_run(defect=None), "Etcher") is None
+
+
+def test_run_sensor_is_deterministic():
+    assert run_sensor(_run(), "Etcher") == run_sensor(_run(), "Etcher")
+
+
+def test_different_runs_can_pick_different_sensors():
+    """같은 불량이라도 런마다 흐르는 파라미터가 달라야 소재가 풍부해진다."""
+    picks = {
+        run_sensor(Run("EQP-ETCH01", f"LOT{n:04d}", "ETCH", _START, _END, "Particle"),
+                   "Etcher")
+        for n in range(40)
+    }
+    assert len(picks) > 1
+
+
+def test_no_excursion_outside_the_run(profiles):
+    p = profiles["EQP-ETCH01"]
+    sensor = run_sensor(_run(), p.eqp_type)
+    assert run_excursion(_run(), sensor, _START - timedelta(minutes=1), p) == 0.0
+    assert run_excursion(_run(), sensor, _END, p) == 0.0
+
+
+def test_no_excursion_without_defect(profiles):
+    p = profiles["EQP-ETCH01"]
+    mid = _START + timedelta(minutes=30)
+    assert run_excursion(_run(defect=None), "CHAMBER_TEMP", mid, p) == 0.0
+
+
+def test_no_excursion_on_unselected_sensor(profiles):
+    p = profiles["EQP-ETCH01"]
+    mid = _START + timedelta(minutes=30)
+    chosen = run_sensor(_run(), p.eqp_type)
+    other = next(s.sensor_code for s in sensors_for(p.eqp_type)
+                 if s.sensor_code != chosen)
+    assert run_excursion(_run(), other, mid, p) == 0.0
+
+
+def test_excursion_grows_through_the_run(profiles):
+    """공정이 서서히 이탈하다 끝에서 불량으로 잡힌다."""
+    p = profiles["EQP-ETCH01"]
+    sensor = run_sensor(_run(), p.eqp_type)
+    early = abs(run_excursion(_run(), sensor, _START + timedelta(minutes=6), p))
+    late = abs(run_excursion(_run(), sensor, _START + timedelta(minutes=54), p))
+    assert late > early
+
+
+def test_excursion_starts_at_zero(profiles):
+    p = profiles["EQP-ETCH01"]
+    assert run_excursion(_run(), run_sensor(_run(), p.eqp_type), _START, p) == 0.0
+
+
+def test_excursion_is_deterministic(profiles):
+    p = profiles["EQP-ETCH01"]
+    mid = _START + timedelta(minutes=30)
+    sensor = run_sensor(_run(), p.eqp_type)
+    assert run_excursion(_run(), sensor, mid, p) == \
+           run_excursion(_run(), sensor, mid, p)
+
+
+def test_zero_length_run_does_not_divide_by_zero(profiles):
+    p = profiles["EQP-ETCH01"]
+    degenerate = Run("EQP-ETCH01", "LOT0010", "ETCH", _START, _START, "Particle")
+    assert run_excursion(degenerate, "CHAMBER_TEMP", _START, p) == 0.0
+
+
+_ONE_SEC = timedelta(seconds=1)
+
+
+def _demo_run(eqp_id):
+    """이탈 상한을 재기 위한 1시간짜리 불량 런."""
+    start = datetime(2026, 9, 3, 1, tzinfo=timezone.utc)
+    return Run(eqp_id, "LOT0001", "STEP", start, start + timedelta(hours=1), "Particle")
