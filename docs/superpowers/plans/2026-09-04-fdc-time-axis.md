@@ -2056,3 +2056,98 @@ isfuzzy 는 **여러 레그 중 일부**가 없을 때만 무시한다. 레그�
 
 - `datatable` 레그가 Spark Kusto 커넥터 read 경로에서 동작하는지 **실제 Fabric 검증**
 - 커넥터 기본 `writeMode`(트랜잭션)에 암묵적으로 기대는 점을 명시할지 판단
+
+---
+
+## 3차 코드 리뷰 대응 (2026-09-07, 커밋 `58f1ab7`)
+
+### High — watermark 읽기가 드라이버 타임존을 UTC 로 단정했다
+
+3라운드 내내 막아 온 "조용한 중복 적재" 의 마지막 구멍이었다. 앞의 두 라운드에서 다른 경로를 다 막았기 때문에 이것만 남았다.
+
+리뷰 지적을 믿지 않고 PySpark `branch-3.5` 의 `python/pyspark/sql/types.py` 를 직접 받아 확인했다. `TimestampType` 은 쓰기와 읽기가 **비대칭**이다.
+
+```python
+def toInternal(self, dt):    # tz-aware 를 넘기므로 timegm = UTC 기준
+    seconds = calendar.timegm(dt.utctimetuple()) if dt.tzinfo else time.mktime(dt.timetuple())
+
+def fromInternal(self, ts):  # tz 인자가 없다 = 드라이버 OS 로컬 시각, naive
+    return datetime.datetime.fromtimestamp(ts // 1000000).replace(microsecond=ts % 1000000)
+```
+
+쓰기는 `to_rows()` 가 tz-aware 를 넘기므로 안전하다. **읽기만** 로컬 시각으로 떨어진다. 그런데 코드는 그 naive 값에 `.replace(tzinfo=utc)` 로 라벨만 붙였다. `replace` 는 값을 그대로 두므로 드라이버가 UTC 가 아니면 watermark 가 오프셋만큼 통째로 어긋난다.
+
+하네스로 실제 재현했다 (2회차 적재 행 수).
+
+| 드라이버 TZ | 2회차 행 수 | 결과 |
+|---|---|---|
+| UTC | 14,752 | 정상 |
+| Asia/Seoul (+9) | 13,024 | **1,728행 영구 누락** |
+| America/Los_Angeles (−7) | 21,538 | **6,786행 중복** |
+
+양수 오프셋은 watermark 를 미래로 보내 `START > NOW` 를 만들고, 그 구간을 영구히 잃는다. 음수 오프셋은 과거로 보내 매 실행이 수천 행을 중복 적재한다. **Fabric 기본 세션은 UTC 라 대부분 안 터지지만, 작업 영역 설정 하나로 조용히 깨진다.**
+
+특히 나쁜 점은 **기존 방어가 전부 무력하다**는 것이다. `datatable` 레그도, `except` 의 `RuntimeError` 도, 3갈래 스펙 게이트도 전부 "쿼리가 실패했을 때" 를 막는다. 여기서는 쿼리가 *성공*하고 값만 틀린다. 검증기 5번(중복 없음)도 어긋난 watermark 를 기준으로 판정하므로 통과한다.
+
+`.astimezone(timezone.utc)` 로 고쳤다. `astimezone` 은 naive 를 시스템 로컬로 해석해 변환하므로 `fromtimestamp` 가 한 일을 정확히 되돌린다. 수정 후 **다섯 타임존 모두 14,752행으로 일치**한다.
+
+`spark.sql.session.timeZone` 설정은 해결책이 **아니다.** `fromtimestamp` 는 그 설정이 아니라 OS TZ 를 본다.
+
+### 미래 watermark 가드
+
+watermark 는 우리가 과거에 쓴 행에서 나오므로 미래일 수 없다. 미래면 `START > NOW` 가 되어 매 실행이 0행을 쓰고 "새로 만들 구간이 없습니다" 만 반복하다 그 구간을 영구히 잃는다. 시계 오차를 감안해 5분을 허용하고 그 밖은 멈춘다.
+
+경계를 확인했다: `NOW+2일` → RAISE, `NOW+10분` → RAISE, `NOW+1분` → OK.
+
+`astimezone` 이 타임존 문제를 중화하므로 이 가드가 실제로 잡는 것은 **시계 어긋남**이다. 두 겹으로 두는 이유는 위 표에서 보듯 이 실패가 조용하기 때문이다.
+
+### 테이블 사전 생성 (리뷰어의 더 강한 제안을 채택)
+
+2차 리뷰에서 남긴 열린 질문 — "`datatable` 레그가 Kusto 의 해석 성공 카운트에 들어가는가" — 은 실제 Eventhouse 없이 확정할 수 없다. 리뷰어가 **질문 자체를 없애는** 쪽을 제안했고 그게 옳다.
+
+README 1단계에 붙여넣기 두 줄을 넣었다.
+
+```kusto
+.create-merge table fdc_sensor_reading (...)
+.create-merge table fdc_sensor_spec (...)
+```
+
+그러면 "테이블 없음" 상태 자체가 사라져 검증 불가능한 가정을 타지 않는다. `.create-merge` 는 멱등이라 여러 번 실행해도 안전하다. `isfuzzy` 방어는 그대로 둔다 — 안내를 건너뛴 사람에게는 여전히 필요하다.
+
+README 의 DDL 이 스키마와 어긋나면 사전 생성이 오히려 해로우므로 `test_readme_ddl_matches_the_schema` 로 두 정의를 묶었다.
+
+### 함께 고친 것
+
+- README 238행의 첫 백필 설명이 "약 65시간, 10만 행" 으로 남아 있었다. 생성 구간은 `NOW` 까지이므로 배포 후 며칠이 지나면 그만큼 유휴가 더 붙는다. 같은 README 116행의 "일주일 뒤 134,808행" 과 어긋나 있었다.
+- `except` 주석이 "union isfuzzy 라서 예외를 안 낸다" 고 옛 근거를 설명하고 있어 `datatable` 레그로 정정했다.
+
+### 테스트는 문자열이 아니라 의미를 검사한다
+
+2차 리뷰의 Issue A 가 문자열 포함 검사의 틈으로 통과한 전례가 있어, 이번 테스트는 PySpark 의 `toInternal`/`fromInternal` 을 재현해 **다섯 타임존에서 왕복**시키고 원래 값으로 돌아오는지 본다.
+
+**새 테스트가 실제로 버그를 잡는지 확인했다.** `astimezone` 을 옛 `replace` 로 되돌리니 3건이 실패하고, 복원하니 통과한다.
+
+### 검증
+
+- **332 테스트 통과** (323 + 타임존 3 + 노트북 셀 2 + DDL 1 + 기타 3)
+- 노트북 14셀 × 7시나리오 전부 통과
+- 타임존 5종(UTC/서울/LA/베를린/콜카타) 왕복 — 전부 14,752행 동일
+
+### MES 시간축 작업과의 정합 확인
+
+`ChangJu-Ahn/mock-mes-kr#3` 이 올라왔고, 그 결과를 픽스처와 대조해 **전 항목 일치**를 확인했다.
+
+```
+                런 91 · 고유 out_time 91 · 구간 64.8h · 끝 2026-09-04T00:00:00+00:00
+                불량코드 있는 런 35
+설비별 런        DIFF01 16 · ETCH01 15 · IMPL01 12 · CVD01 11 · PHOT01 11
+                CMP01 8 · METRO(None) 7 · TEST01 6 · PHOT02 5
+LOT0010/ETCH    ETCH01 / Particle / Rework · 22:32 → 00:12 (100분)
+```
+
+파생값도 맞는다. 설비가 배정된 런 84건(91 − METRO 7), 그중 불량 31건(35 − METRO 4) — FDC 가 "런" 으로 세는 단위와 정확히 같다. **즉 픽스처는 이미 PR #3 의 출력이며, 재배포를 기다리지 않고 FDC 를 완성할 수 있었다.**
+
+### 남은 것 (자율 불가)
+
+- `mock-mes-kr#3` 머지 → `az deployment group create` 재배포. 재배포 시 `utcNow()` 가 새 앵커를 잡으므로 **FDC Eventhouse 도 함께 비워야 한다** (새 구간이 기존 watermark 보다 과거면 영구히 빈 채로 남는다). README "알려진 한계" 에 `.drop table` 로 적어 뒀다.
+- 실제 Fabric 에서 노트북 첫 실행 — 사전 생성 안내를 따르면 `isfuzzy` 경로를 아예 타지 않는다.
