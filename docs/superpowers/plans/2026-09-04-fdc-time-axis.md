@@ -2310,3 +2310,133 @@ README 권장 주기 되돌리기            → FAILED
 | 4차 | 실행 겹침 | 검사가 전부 통과하고 값만 2배 |
 
 **전부 "에러가 안 나는 실패" 다.** 이런 코드에서는 "테스트가 통과한다" 가 근거가 되지 못한다. 새 테스트가 실제로 그 버그를 잡는지 옛 코드로 되돌려 확인하는 습관이 네 라운드 내내 유일하게 믿을 만한 도구였다.
+
+---
+
+## 5차 코드 리뷰 대응 (2026-09-07, 커밋 `7395732`)
+
+### 다섯 번째가 있었다 — 그런데 내가 의심한 곳이 아니었다
+
+4차 대응을 넘기면서 다섯 번째 전제로 **"MES 스냅샷이 실행 간에 동일하다"** 를 지목했다.
+리뷰어의 답은 "다섯 번째가 있습니다. 그런데 MES 스냅샷이 아닙니다" 였다.
+
+MES 스냅샷 가설은 이미 닫혀 있었다. 리뷰어를 기다리는 동안 직접 재봤기 때문이다
+(커밋 `1800643`). `EQP-ETCH01` 이 유휴이던 3.7시간 틈에 60분짜리 실적을 등록하고 다시
+돌리면 `Run` 720행이 통째로 없고 `Idle` 24행만 남는다. 리뷰어가 추가로 판 두 갈래도
+막혀 있었다 — 새 `eqp_id` 는 `derive_equipment` 가 `process_results` 에서 유도하므로
+프로파일과 출처가 같아 갈라질 수 없고, route 에 없는 `step_code` 는 `sensors_for("")`
+가 공통 센서 2종을 돌려줘 예외가 안 난다.
+
+### Issue H — 판독 쓰기가 컬럼 **순서**에 기대고 있었다
+
+`writeMode` 를 못 박을 때 `KustoSink.md` 를 읽었는데, 같은 문서의 바로 아래 항목을
+놓쳤다.
+
+> **KUSTO_ADJUST_SCHEMA**: 'adjustSchema' If set to 'NoAdjustment' (default),
+> **it does nothing.**
+
+커넥터는 항상 CSV 로 올린다. 매핑을 안 만들면 **위치**로 들어간다. 그리고 Learn 의
+`.create-merge table` 은 이렇게 적는다.
+
+> Any column in &lt;columns specification&gt; that didn't previously exist in T will be
+> **added to the end of T's schema.**
+> Any column ... with a **different data type** will cause the command to fail.
+
+**타입이 다르면 실패하지만 순서가 다르면 실패하지 않는다.** 두 문서를 겹치면, 이 모듈의
+컬럼 순서가 바뀐 뒤(예: `run_status` 를 중간에 넣은 것과 같은 변경) 이미 테이블을 만들어
+둔 참가자가 새 DDL 을 붙여넣으면 새 컬럼이 끝에 붙는다. 그 상태로 위치 쓰기를 하면 값이
+옆 컬럼으로 밀린다. 타입이 안 맞는 필드는 null 이 되므로 **적재는 "성공" 하고 검사 9개도
+통과한다** — 검사는 생성한 배치를 보지 테이블을 안 보기 때문이다.
+
+`customizing/` 아래의 교육 모듈이라 센서·컬럼 추가는 예상된 변형이다.
+
+### 리뷰어 제안을 채택하지 않았다 — 첫 실행을 깨뜨린다
+
+리뷰어는 `FailIfNotMatch` 한 줄을 제안했다. 늘 하던 대로 1차 자료로 검증했는데, 이번에는
+**결론이 갈렸다.** 커넥터 소스를 읽었다.
+
+```scala
+// KustoIngestionUtils.forceAdjustSchema — 빈 타깃 가드가 없다
+val targetSchemaColumns = targetSchema.map(c => c.get("Name").asText()).toSeq
+val sourceSchemaColumns = sourceSchema.map(c => c.name)
+if (targetSchemaColumns != sourceSchemaColumns) { throw SchemaMatchException(...) }
+```
+
+바로 아래 `setCsvMapping` 에는 그 가드가 주석까지 붙어 있다.
+
+```scala
+// If the target schema is empty, it means that the table is not created yet, so we
+// don't need to validate the schema compatibility.
+if (targetSchemaColumns.nonEmpty && tableCreationMode != SinkTableCreationMode.CreateIfNotExist)
+```
+
+`KustoWriter.scala` 는 `adjustSchema` 를 `tableExists` 계산보다 **먼저** 부른다. 없는
+테이블에 `.show table ... schema as json` 은 빈 결과를 낸다(`tableExists =
+schemaShowCommandResult.count() > 0` 이 그 증거이고, `initializeTablesBySchema` 가
+`targetSchema.isEmpty` 를 테이블 생성 분기로 쓴다). 따라서 `FailIfNotMatch` 는 첫 실행에서
+`Seq()` 와 8컬럼을 비교하다 던진다. **사전 생성을 건너뛴 참가자가 3단계에서 막힌다.**
+README 가 "안 해도 노트북이 만든다" 고 안내하는 바로 그 경로다.
+
+조용한 오염을 막으려다 **정상 경로를 시끄럽게 깨뜨리는** 교환이 된다.
+
+### 채택한 것 — `GenerateDynamicCsvMapping`
+
+```scala
+new ColumnMapping(sourceColumn._1, targetMapping)  // 이름 + 대상 타입
+columnMapping.setOrdinal(sourceColumn._2)          // CSV 위치는 DataFrame 인덱스
+```
+
+`{컬럼 이름, 대상 타입, DataFrame 위치}` 매핑이라 대상 테이블의 순서가 무의미해진다.
+빈 타깃 가드가 있어 첫 실행도 안전하다. `Transactional` 경로까지 확인했다 — 기존
+테이블이면 임시 테이블이 `extractSchemaFromResultTable(targetSchema)` 로 **대상 스키마**
+로 만들어지므로 이름 매핑이 정확히 들어가고, extent 이동은 동일 스키마 간이다.
+
+남는 틈 하나: `CreateIfNotExist` 를 쓰면 `validateSchemaCompatibility` 가 건너뛰어져,
+새 컬럼을 더했는데 참가자가 `.create-merge` 를 건너뛰면 그 컬럼이 매핑에서 빠진다.
+그런데 그 컬럼은 테이블에 아예 없으므로 **KQL 이 질의 시점에 시끄럽게 실패한다.**
+지금의 "모든 컬럼이 밀려 조용히 틀린 값" 보다 훨씬 낫다.
+
+### 곁들여 고친 것
+
+- **절대 실패할 수 없는 어서션.** `assert "720" in readme and "24" in readme` 에서
+  README 에 `"24"` 를 포함한 줄이 7개(`ago(24h)`, "지난 24시간" …)라 그 반쪽은 결합이
+  아니었다. 표 행 전체(`| Eventhouse 최종 | **0** | 24 |`)를 보게 바꿨다. 4차에 이어
+  **내가 또 만든 종류**다 — 문자열 포함 검사는 늘 이 함정을 판다.
+- **존재하지 않는 커밋 해시.** 계획서·PR 본문의 `0a1c5f4` → `a671f7d`. 3.5차의
+  `bf3d2e3` 에 이어 두 번째라, 이제 해시를 적을 때 `git cat-file -e` 로 확인한다.
+- **표 셀에 근거.** `15분 (권장)` → `15분 (권장 · 겹침 방지)`. 표만 보고 지나가는
+  사람도 이유를 알게.
+
+### 리뷰어를 기다리는 동안 자발적으로 고친 것
+
+**노트북 안의 스케줄 안내가 아직 3분이었다** (커밋 `38fb57d`). 4차에서 README 를 15분
+권장으로 바꾸면서 `_OUTRO` 셀은 그대로 뒀다. 참가자는 README 를 안 보고 노트북만 볼 수도
+있다. **리뷰어가 Issue F 로 지적한 "쌍둥이 중 한쪽만 고침" 함정을 내가 다시 밟았다.**
+근거도 용량에서 겹침으로 바꾸고, "3분마다 실행된다" 서술 네 곳을 "실행마다" 로 고쳤다 —
+결정성의 근거는 주기가 아니라 프로세스가 매번 새로 뜬다는 사실이다.
+
+### 다섯 라운드의 공통점
+
+| 라운드 | 지적 | 공통점 |
+|---|---|---|
+| 1차 | watermark 재백필 | 쿼리는 성공하고 값만 틀림 |
+| 2차 | `union isfuzzy` 단일 레그 | 문자열 검사가 동작을 단언 |
+| 3차 | 드라이버 타임존 | 쿼리는 성공하고 값만 틀림 |
+| 4차 | 실행 겹침 | 검사가 전부 통과하고 값만 2배 |
+| 5차 | 컬럼 순서 | 적재는 성공하고 값이 옆 컬럼에 |
+
+**다섯 번 모두 "에러가 안 나는 실패" 였다.** 그리고 5차는 **리뷰 지적을 1차 자료로
+재검증하는 습관이 처음으로 리뷰어와 다른 결론을 낸** 라운드였다. 지적(순서 의존)은
+맞았고 처방(`FailIfNotMatch`)이 틀렸다.
+
+### 검증
+
+**342 테스트** · 노트북 7시나리오. 돌연변이 3종이 모두 잡히는 것을 확인했다.
+
+```
+adjustSchema 옵션 제거 (옛 상태)        → FAILED
+FailIfNotMatch 로 교체 (리뷰어 제안)     → FAILED
+README 720행 표 변경                    → FAILED   ← 고치기 전 어서션은 통과하던 상태
+노트북 _OUTRO 를 3분 권장으로 되돌리기    → FAILED
+"3분마다" 서술 되살리기                  → FAILED
+```
