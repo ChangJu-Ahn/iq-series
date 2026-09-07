@@ -313,3 +313,69 @@ def test_notebook_defines_span_before_it_is_used(notebook):
     """인라인된 소스에서 span 정의가 호출보다 앞에 있어야 한다."""
     source = "\n".join(c.source for c in notebook.cells if c.cell_type == "code")
     assert source.index("def span(") < source.index("span(FACTS)")
+
+
+# --- 커밋된 노트북이 소스와 어긋나지 않게 한다 -----------------------------
+#
+# .ipynb 는 생성물입니다. 참가자와 하네스는 src/ 가 아니라 .ipynb 를 읽으므로,
+# src/ 를 고치고 build_notebook.py 를 안 돌리면 옛 코드가 그대로 배포됩니다.
+# 이 함정에 실제로 한 번 걸렸습니다. 테스트는 전부 통과하는데 노트북만 옛
+# 코드여서, 고쳤다고 믿은 버그를 하네스가 다시 잡았습니다.
+#
+# 아래 두 테스트가 그 틈을 닫습니다.
+
+
+def _serialize(nb) -> str:
+    return nbformat.writes(nb)
+
+
+def test_notebook_build_is_deterministic():
+    """같은 소스로 두 번 빌드하면 바이트까지 같아야 한다.
+
+    nbformat 은 기본적으로 셀마다 임의의 id 를 새로 뽑습니다. 그대로 두면
+    재빌드가 항상 16줄짜리 diff 를 만들어서, git status 만으로는 "내용이
+    진짜 바뀌었나" 를 구분할 수 없습니다. 노이즈가 상시라면 아래
+    test_committed_notebook_matches_a_fresh_build 도 무의미해집니다.
+    """
+    assert _serialize(build_notebook(ROOT)) == _serialize(build_notebook(ROOT))
+
+
+def test_cell_ids_are_stable_names_not_random():
+    """셀 id 가 내용이 아니라 역할에서 나와야 한다.
+
+    역할 기반이면 한 셀을 고쳐도 그 셀의 source 만 diff 에 뜹니다. 내용
+    해시로 만들면 고친 셀의 id 까지 같이 흔들려서 리뷰가 어려워집니다.
+    """
+    ids = [cell.id for cell in build_notebook(ROOT).cells]
+    assert ids == [
+        "fdc-intro",
+        "fdc-parameters",
+        *[f"fdc-module-{name.replace('_', '-')}" for name in MODULE_ORDER],
+        "fdc-gate",
+        "fdc-connect",
+        "fdc-watermark",
+        "fdc-build",
+        "fdc-validate",
+        "fdc-load",
+        "fdc-outro",
+    ]
+    assert len(set(ids)) == len(ids), "id 가 겹치면 nbformat 이 거부한다"
+
+
+def test_committed_notebook_matches_a_fresh_build(tmp_path):
+    """커밋된 .ipynb 가 지금 src/ 로 빌드한 것과 같아야 한다.
+
+    비교는 nbformat.writes 가 아니라 nbformat.write 로 합니다. 둘은 끝
+    개행 하나가 다르고, 실제로 커밋되는 것은 write 쪽입니다. writes 로
+    비교하면서 그 차이를 rstrip 으로 덮으면, 나중에 nbformat 이 직렬화를
+    바꿨을 때 테스트가 조용히 거짓을 말하게 됩니다.
+
+    이 테스트가 실패하면 답은 하나입니다: `python3 build_notebook.py`.
+    """
+    fresh_path = tmp_path / "fresh.ipynb"
+    nbformat.write(build_notebook(ROOT), fresh_path)
+
+    committed = (ROOT / "fdc_eventhouse_stream.ipynb").read_bytes()
+    assert committed == fresh_path.read_bytes(), (
+        "커밋된 노트북이 src/ 와 어긋납니다. `python3 build_notebook.py` 를 실행하세요."
+    )

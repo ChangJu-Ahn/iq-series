@@ -398,12 +398,20 @@ Spark 커넥터의 `CreateIfNotExist` 가 만듭니다. 컬럼 타입은 `spark_
 
 ```bash
 cd customizing/fabric/fdc-eventhouse
-python3 -m pytest -q          # 310개
+python3 -m pytest -q          # 전체 테스트
 python3 build_notebook.py     # 노트북 재생성
 ```
 
 `src/` 를 고쳤으면 반드시 `build_notebook.py` 를 다시 돌리세요. 노트북은 생성물이고
 직접 고치면 다음 빌드에서 덮어써집니다.
+
+깜빡해도 테스트가 잡습니다. `test_committed_notebook_matches_a_fresh_build` 가
+커밋된 `.ipynb` 를 지금 `src/` 로 빌드한 것과 바이트까지 비교합니다. 이게 실패하면
+답은 하나입니다 — `python3 build_notebook.py`.
+
+셀 `id` 는 역할에서 나옵니다(`fdc-watermark`, `fdc-module-fdc-runs` …). 그래서
+내용이 그대로면 몇 번을 다시 빌드해도 `.ipynb` 가 바뀌지 않고, `git diff` 에는 실제로
+고친 셀만 뜹니다.
 
 ### 구조
 

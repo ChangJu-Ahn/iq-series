@@ -378,9 +378,16 @@ def strip_local_imports(source: str) -> str:
     return _LOCAL_IMPORT.sub("", source)
 
 
-def _code(source: str, **metadata) -> nbformat.NotebookNode:
+def _code(source: str, key: str, **metadata) -> nbformat.NotebookNode:
     cell = nbformat.v4.new_code_cell(source.rstrip() + "\n")
+    cell.id = key
     cell.metadata.update(metadata)
+    return cell
+
+
+def _markdown(source: str, key: str) -> nbformat.NotebookNode:
+    cell = nbformat.v4.new_markdown_cell(source)
+    cell.id = key
     return cell
 
 
@@ -396,18 +403,25 @@ def build_notebook(root: Path) -> nbformat.NotebookNode:
             "language_info": {"name": "python"},
         }
     )
-    cells = [nbformat.v4.new_markdown_cell(_INTRO)]
-    cells.append(_code(_PARAMETERS, tags=["parameters"]))
+    cells = [_markdown(_INTRO, "fdc-intro")]
+    cells.append(_code(_PARAMETERS, "fdc-parameters", tags=["parameters"]))
     for module in MODULE_ORDER:
         source = (root / "src" / f"{module}.py").read_text(encoding="utf-8")
-        cells.append(_code(strip_local_imports(source), fdc_cell="module", fdc_module=module))
-    cells.append(_code(_GATE))
-    cells.append(_code(_CONNECT))
-    cells.append(_code(_WATERMARK))
-    cells.append(_code(_BUILD))
-    cells.append(_code(_VALIDATE))
-    cells.append(_code(_LOAD))
-    cells.append(nbformat.v4.new_markdown_cell(_OUTRO))
+        cells.append(
+            _code(
+                strip_local_imports(source),
+                f"fdc-module-{module.replace('_', '-')}",
+                fdc_cell="module",
+                fdc_module=module,
+            )
+        )
+    cells.append(_code(_GATE, "fdc-gate"))
+    cells.append(_code(_CONNECT, "fdc-connect"))
+    cells.append(_code(_WATERMARK, "fdc-watermark"))
+    cells.append(_code(_BUILD, "fdc-build"))
+    cells.append(_code(_VALIDATE, "fdc-validate"))
+    cells.append(_code(_LOAD, "fdc-load"))
+    cells.append(_markdown(_OUTRO, "fdc-outro"))
     notebook.cells = cells
     return notebook
 
