@@ -178,3 +178,34 @@ def test_lot_columns_still_forbidden(readings, facts):
     rows = [dict(r) for r in readings]
     rows[0]["lot_id"] = "LOT0010"
     assert any(c.fatal and not c.passed for c in validate(rows, facts))
+
+
+def test_idle_only_batch_skips_dataset_wide_checks(readings, facts):
+    """유휴만 담긴 증분 배치가 매번 경고를 띄우면 안 된다.
+
+    검사 7·8 은 데이터셋 전체의 성질인데 배치 단위로 평가된다. 백필 이후의
+    3분 배치는 대개 유휴만 담고, 유휴에는 경보가 구조적으로 0 이라 이 두
+    검사는 영구히 실패한다. 20명 × 480회/일이 전부 이 경고를 보게 된다.
+    """
+    idle_only = [r for r in readings if r["run_status"] == "Idle"]
+    assert idle_only, "픽스처에 유휴 행이 있어야 이 테스트가 의미를 갖는다"
+
+    checks = {c.number: c for c in validate(idle_only, facts)}
+    for number in (7, 8):
+        assert checks[number].skipped, f"검사 {number}가 유휴 배치에서 건너뛰지 않았다"
+        assert checks[number].passed
+        assert checks[number].mark == "SKIP"
+
+
+def test_running_batch_still_evaluates_dataset_wide_checks(readings, facts):
+    """가동 행이 있으면 건너뛰지 않는다. skip 이 검사를 무력화하면 안 된다."""
+    checks = {c.number: c for c in validate(readings, facts)}
+    for number in (7, 8):
+        assert not checks[number].skipped
+        assert checks[number].mark != "SKIP"
+
+
+def test_report_reports_skipped_count(readings, facts):
+    idle_only = [r for r in readings if r["run_status"] == "Idle"]
+    assert "건너뜀 2건" in format_report(validate(idle_only, facts))
+    assert "건너뜀" not in format_report(validate(readings, facts))

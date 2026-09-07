@@ -14,6 +14,7 @@ from src.fdc_schema import (
     spark_schema,
     to_iso,
     to_rows,
+    spec_count_query,
     watermark_query,
 )
 from src.fdc_generator import build_readings
@@ -171,3 +172,17 @@ def test_create_command_includes_run_status():
 def test_lot_id_stays_out_of_the_schema():
     """FDC 는 로트를 모른다. 계획서 '설계 결정' 참조."""
     assert "lot_id" not in {n for n, _ in READING_SCHEMA}
+
+
+def test_watermark_query_tolerates_missing_table():
+    """테이블이 없을 때 예외가 나면 '첫 실행' 과 '조회 실패' 를 못 가른다."""
+    assert "union isfuzzy=true" in watermark_query()
+
+
+def test_spec_count_query_counts_the_spec_table():
+    """스펙 적재 여부는 스펙 테이블 자신의 행 수로 판정해야 한다."""
+    query = spec_count_query()
+    assert SPEC_TABLE in query
+    assert READING_TABLE not in query
+    assert "union isfuzzy=true" in query
+    assert "count()" in query

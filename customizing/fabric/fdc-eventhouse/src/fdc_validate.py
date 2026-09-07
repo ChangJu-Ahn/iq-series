@@ -39,9 +39,12 @@ class Check:
     fatal: bool
     passed: bool
     detail: str = ""
+    skipped: bool = False
 
     @property
     def mark(self) -> str:
+        if self.skipped:
+            return "SKIP"
         if self.passed:
             return "OK"
         return "FAIL" if self.fatal else "WARN"
@@ -138,6 +141,12 @@ def validate(readings: list[dict], facts, watermark: datetime | None = None) -> 
         )
     )
 
+    # 7·8 번은 데이터셋 전체의 성질이지 배치 하나의 성질이 아니다. 첫 백필
+    # 이후의 배치는 MES 구간을 지난 유휴만 담고, 유휴에는 이상을 싣지 않으므로
+    # 경보가 구조적으로 0 이다. 그대로 평가하면 정상 운영 중인 모든 실행이
+    # 경고 2건을 뱉어 진짜 경고가 묻힌다.
+    running = [r for r in readings if r.get("run_status") == RUNNING]
+
     counts = Counter(r["status"] for r in readings)
     ratio = counts[ALARM] / len(readings) if readings else 0.0
     checks.append(
@@ -145,8 +154,13 @@ def validate(readings: list[dict], facts, watermark: datetime | None = None) -> 
             7,
             f"Alarm 비율이 0 초과 {MAX_ALARM_RATIO:.0%} 미만이다",
             False,
-            0 < ratio < MAX_ALARM_RATIO,
-            f"Alarm {counts[ALARM]}행 / 전체 {len(readings)}행 = {ratio:.2%}",
+            (0 < ratio < MAX_ALARM_RATIO) if running else True,
+            (
+                f"Alarm {counts[ALARM]}행 / 전체 {len(readings)}행 = {ratio:.2%}"
+                if running
+                else "가동 행이 없는 배치라 평가하지 않습니다"
+            ),
+            skipped=not running,
         )
     )
 
@@ -159,8 +173,13 @@ def validate(readings: list[dict], facts, watermark: datetime | None = None) -> 
             8,
             "불량률 상위 설비의 이상이 하위 설비보다 많다",
             False,
-            abnormal[worst] > abnormal[best],
-            f"{worst}={abnormal[worst]}행, {best}={abnormal[best]}행",
+            (abnormal[worst] > abnormal[best]) if running else True,
+            (
+                f"{worst}={abnormal[worst]}행, {best}={abnormal[best]}행"
+                if running
+                else "가동 행이 없는 배치라 평가하지 않습니다"
+            ),
+            skipped=not running,
         )
     )
 
@@ -199,8 +218,10 @@ def format_report(checks: list[Check]) -> str:
             lines.append(f"        {check.detail}")
     failed = [c for c in checks if not c.passed and c.fatal]
     warned = [c for c in checks if not c.passed and not c.fatal]
+    skipped = [c for c in checks if c.skipped]
     lines.append("=" * 60)
-    lines.append(f"치명 {len(failed)}건, 경고 {len(warned)}건 / 전체 {len(checks)}건")
+    tail = f", 건너뜀 {len(skipped)}건" if skipped else ""
+    lines.append(f"치명 {len(failed)}건, 경고 {len(warned)}건{tail} / 전체 {len(checks)}건")
     return "\n".join(lines)
 
 

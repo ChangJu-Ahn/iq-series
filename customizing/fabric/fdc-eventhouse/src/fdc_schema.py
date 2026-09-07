@@ -114,8 +114,24 @@ def to_rows(records: list[dict], columns: tuple[str, ...]) -> list[tuple]:
 
 
 def watermark_query(table: str = READING_TABLE) -> str:
-    """마지막으로 적재한 시각. 없으면 빈 결과가 아니라 null 한 행이 온다."""
-    return f"{table} | summarize last_ts = max(reading_ts)"
+    """마지막으로 적재한 시각. 없으면 빈 결과가 아니라 null 한 행이 온다.
+
+    `union isfuzzy=true` 로 감싸는 이유는 테이블이 아직 없을 때 예외 대신 빈
+    결과를 받기 위해서다. 그래야 '진짜 첫 실행' 과 '조회 실패' 를 구분할 수
+    있다. 구분하지 못하면 토큰 만료나 스로틀링 한 번이 전체 재백필로 이어지고
+    Eventhouse 는 유니크 제약이 없어 10만 행이 그대로 중복된다.
+    """
+    return f"union isfuzzy=true {table} | summarize last_ts = max(reading_ts)"
+
+
+def spec_count_query(table: str = SPEC_TABLE) -> str:
+    """스펙 테이블의 행 수. 테이블이 없으면 0 이 온다.
+
+    스펙 적재 여부를 판독 테이블의 watermark 로 판정하면 안 된다. 스펙 쓰기가
+    판독 쓰기보다 먼저라, 판독 적재가 실패해 재실행될 때마다 스펙 42행이
+    다시 쌓인다. 그러면 스펙과 조인하는 모든 질의가 중복 수만큼 팬아웃된다.
+    """
+    return f"union isfuzzy=true {table} | summarize rows = count()"
 
 
 # KQL 타입에 대응하는 Spark 타입. 데이터프레임 스키마를 명시하는 데 쓴다.

@@ -28,6 +28,33 @@ def profiles(facts):
     return build_profiles(facts)
 
 
+@pytest.fixture(scope="module")
+def profiles_factory():
+    """공정이력을 한 건 더한 프로파일을 만들어 준다.
+
+    설비 간 결합이 없는지 보려면 "한 설비만 바뀐 두 스냅샷"이 필요하다.
+    """
+    import copy
+    import json
+    from pathlib import Path
+
+    from src.mes_probe import MesFacts
+
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mes_facts.json").read_text(encoding="utf-8"))
+
+    def make(extra_clean_run: str | None = None):
+        payload = copy.deepcopy(raw)
+        if extra_clean_run:
+            template = next(r for r in payload["process_results"] if r.get("eqp_id") == extra_clean_run)
+            added = dict(template)
+            added["lot_id"] = "LOT-SYNTHETIC"
+            added["defect_code"] = None
+            payload["process_results"].append(added)
+        return build_profiles(MesFacts.from_dict(payload))
+
+    return make
+
+
 def test_seed_matches_spec_value():
     assert seed("EQP-CMP01", "AMBIENT_TEMP", 100) == 2450050198
 
@@ -70,11 +97,26 @@ def test_known_defect_rates(profiles):
     assert profiles["EQP-IMPL01"].defect_rate == pytest.approx(2 / 12)
 
 
-def test_severity_spans_zero_to_one(profiles):
-    sev = {p.eqp_id: p.severity for p in profiles.values()}
-    assert sev["EQP-CMP01"] == pytest.approx(1.0)
-    assert sev["EQP-IMPL01"] == pytest.approx(0.0)
-    assert all(0.0 <= v <= 1.0 for v in sev.values())
+def test_severity_is_the_equipments_own_defect_rate(profiles):
+    """severity 는 설비 자신의 불량률이다. 다른 설비와 무관해야 한다.
+
+    전체 설비의 min/max 로 정규화하면 어느 설비 실적이 하나만 바뀌어도
+    나머지 진폭이 전부 흔들린다. 20명이 한 mock MES 를 공유하므로 한 사람이
+    공정 실적을 등록하면 그 뒤에 백필한 사람의 과거 판독값이 달라진다.
+    """
+    for p in profiles.values():
+        assert p.severity == pytest.approx(p.defect_runs / p.total_runs)
+        assert 0.0 <= p.severity <= 1.0
+
+
+def test_severity_ignores_other_equipment(profiles_factory):
+    """한 설비의 실적을 바꿔도 다른 설비의 severity 는 그대로다."""
+    before = profiles_factory()
+    after = profiles_factory(extra_clean_run="EQP-IMPL01")
+    assert after["EQP-IMPL01"].severity != before["EQP-IMPL01"].severity
+    for eqp_id in before:
+        if eqp_id != "EQP-IMPL01":
+            assert after[eqp_id].severity == before[eqp_id].severity
 
 
 def test_severity_orders_by_defect_rate(profiles):
@@ -128,8 +170,13 @@ def test_worse_equipment_excurses_harder(profiles):
     ordered = sorted(profiles.values(), key=lambda p: p.defect_rate)
     for a, b in zip(ordered, ordered[1:]):
         assert excursion_amplitude(a) <= excursion_amplitude(b)
-    assert excursion_amplitude(profiles["EQP-CMP01"]) == pytest.approx(EXCURSION_MAX)
-    assert excursion_amplitude(profiles["EQP-IMPL01"]) == pytest.approx(EXCURSION_MIN)
+    # 진폭은 불량률 0 에서 MIN, 1 에서 MAX 다. 픽스처의 실제 불량률은
+    # 0.167~0.875 이므로 양 끝에 닿지 않고 그 사이에 놓인다.
+    for p in profiles.values():
+        assert EXCURSION_MIN < excursion_amplitude(p) < EXCURSION_MAX
+    assert excursion_amplitude(profiles["EQP-CMP01"]) == pytest.approx(
+        EXCURSION_MIN + (EXCURSION_MAX - EXCURSION_MIN) * profiles["EQP-CMP01"].defect_rate
+    )
 
 
 def test_same_type_worse_equipment_excurses_harder(profiles):

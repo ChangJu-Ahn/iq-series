@@ -125,9 +125,24 @@ def test_connect_cell_explains_what_pins_types(notebook):
     assert "spark_schema(" in connect
 
 
-
+def test_spec_table_write_is_gated_on_its_own_row_count(notebook):
+    """판독 watermark 로 판정하면 판독 적재 실패 때마다 스펙만 42행씩 쌓인다."""
     load = next(c.source for c in notebook.cells if "kusto_write" in c.source and "SPEC_TABLE" in c.source)
-    assert 'if MODE == "backfill"' in load
+    assert "spec_count_query()" in load
+    assert "_spec_present == 0" in load
+    assert 'MODE == "backfill"' not in load
+
+
+def test_spec_count_is_not_indexed_blindly(notebook):
+    """빈 결과에 [0] 을 바로 태우면 IndexError 로 죽는다.
+
+    summarize count() 는 한 행을 보장하므로 빈 결과는 조회가 이상하다는
+    뜻이다. 모르는 채로 쓰면 스펙이 42행씩 중복된다.
+    """
+    load = next(c.source for c in notebook.cells if "spec_count_query()" in c.source)
+    assert ".collect()[0]" not in load
+    assert "if not _spec_rows:" in load
+    assert "raise RuntimeError" in load
 
 
 def test_validation_runs_before_load(notebook):
@@ -137,11 +152,21 @@ def test_validation_runs_before_load(notebook):
     assert validate_at < load_at
 
 
-def test_watermark_cell_handles_missing_table(notebook):
-    """첫 실행에는 테이블이 없어 조회가 실패합니다. 거기서 죽으면 안 됩니다."""
+def test_watermark_cell_never_falls_back_to_backfill(notebook):
+    """조회 실패를 첫 실행으로 오인하면 65시간이 통째로 중복 적재된다.
+
+    테이블이 없는 경우는 union isfuzzy 가 빈 결과로 처리하므로, 여기 오는
+    예외는 토큰 만료·스로틀링 같은 일시적 실패다. 멈춰야 한다.
+    """
     cell = next(c.source for c in notebook.cells if "WATERMARK" in c.source and "try:" in c.source)
-    assert "except Exception" in cell
-    assert "WATERMARK = None" in cell
+    assert "WATERMARK = None" not in cell
+    assert "raise RuntimeError" in cell
+
+
+def test_watermark_query_tolerates_a_missing_table(notebook):
+    """첫 실행에는 테이블이 없다. 거기서 예외가 나면 안 된다."""
+    cell = next(c.source for c in notebook.cells if "def watermark_query" in c.source)
+    assert "union isfuzzy=true" in cell
 
 
 def test_watermark_cell_does_not_cap_span(notebook):

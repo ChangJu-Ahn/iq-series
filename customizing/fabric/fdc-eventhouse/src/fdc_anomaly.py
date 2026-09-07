@@ -25,10 +25,14 @@ from dataclasses import dataclass
 from src.fdc_sensors import sensors_for
 
 # 이탈 진폭. 정상범위 반폭을 1.0 으로 보는 단위다.
-# 경보 임계는 정상 반폭의 1.5~3.0 배에 있으므로 1.2 는 경고까지만, 2.8 은
-# 경보까지 닿는다. 불량률이 가장 낮은 설비와 높은 설비를 이 두 값에 맞춘다.
-EXCURSION_MIN = 1.4
-EXCURSION_MAX = 2.9
+# 경보 임계는 정상 반폭의 1.5~3.0 배에 있으므로, 불량률 0 인 설비는 1.0 으로
+# 경고에도 못 닿고 불량률 100% 인 설비는 3.4 로 확실히 경보를 낸다.
+#
+# 상한을 이보다 낮추면 안 되는 이유: 실제 픽스처에서 가장 깨끗한 설비의
+# 불량률이 0 이 아니라 0.167 이다. MIN 을 키우면 그 설비까지 경보에 닿아
+# test_lowest_severity_stays_below_min_alarm_ratio 가 깨진다.
+EXCURSION_MIN = 1.0
+EXCURSION_MAX = 3.4
 
 
 # 불량코드가 지목하는 센서. 물리적 인과가 성립하는 것만 넣는다(설계 스펙 7.2).
@@ -114,8 +118,6 @@ def build_profiles(facts) -> dict[str, EquipmentProfile]:
             codes[eqp_id][code] = codes[eqp_id].get(code, 0) + 1
 
     rates = {e: defects.get(e, 0) / totals[e] for e in totals}
-    lo, hi = (min(rates.values()), max(rates.values())) if rates else (0.0, 0.0)
-    span = hi - lo
 
     return {
         eqp_id: EquipmentProfile(
@@ -125,7 +127,12 @@ def build_profiles(facts) -> dict[str, EquipmentProfile]:
             total_runs=totals[eqp_id],
             defect_runs=defects.get(eqp_id, 0),
             defect_codes=dict(sorted(codes[eqp_id].items())),
-            severity=(rates[eqp_id] - lo) / span if span else 0.0,
+            # 설비 자신의 불량률만 쓴다. 전체 설비의 min/max 로 정규화하면
+            # 어느 설비 실적이 하나만 바뀌어도 나머지 일곱 대의 진폭이 전부
+            # 흔들린다. Mock MES 는 쓰기 툴을 노출하고 20명이 한 인스턴스를
+            # 공유하므로, 한 사람이 공정 실적을 등록하면 그 뒤에 백필한
+            # 사람의 과거 판독값이 앞사람과 달라진다.
+            severity=rates[eqp_id],
         )
         for eqp_id in sorted(totals)
     }

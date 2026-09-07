@@ -169,8 +169,16 @@ try:
     _row = kusto_read(watermark_query()).collect()
     WATERMARK = _row[0]["last_ts"] if _row else None
 except Exception as exc:
-    print(f"watermark 조회 실패. 첫 실행으로 간주합니다. 원인: {exc}")
-    WATERMARK = None
+    # 여기서 첫 실행으로 간주하고 넘어가면 안 됩니다. watermark_query 는
+    # 테이블이 없어도 예외를 내지 않으므로(union isfuzzy) 여기 온 예외는
+    # 토큰 만료·스로틀링·네트워크 같은 일시적 실패입니다. 백필로 떨어지면
+    # 이미 적재된 10만 행을 통째로 다시 씁니다. 멈추는 편이 낫습니다.
+    raise RuntimeError(
+        "watermark 조회에 실패해 중단합니다. 첫 실행으로 간주하면 이미 적재된"
+        " 구간을 다시 써서 중복이 쌓입니다(Eventhouse 는 유니크 제약이 없습니다)."
+        " KUSTO_URI 와 KUSTO_DATABASE 를 확인하고 다시 실행하세요."
+        f" 원인: {exc}"
+    ) from exc
 
 if WATERMARK is not None and WATERMARK.tzinfo is None:
     WATERMARK = WATERMARK.replace(tzinfo=timezone.utc)
@@ -225,15 +233,31 @@ else:
     print("적재할 행이 없어 검증을 건너뜁니다.")
 '''
 
-_LOAD = '''# 센서 스펙은 42행 정적이라 첫 실행에서만 씁니다. 매번 쓰면 중복이 쌓입니다.
-if MODE == "backfill":
+_LOAD = '''# 센서 스펙은 42행 정적입니다. 적재 여부를 판독 테이블의 watermark 로
+# 판정하면 안 됩니다. 스펙 쓰기가 판독 쓰기보다 먼저라, 판독 적재가 실패해
+# 재실행될 때마다 스펙만 42행씩 쌓입니다. 그러면 스펙과 조인하는 질의가
+# 전부 중복 수만큼 팬아웃됩니다. 스펙 테이블 자신의 행 수로 판정합니다.
+_spec_rows = kusto_read(spec_count_query()).collect()
+
+# summarize count() 는 테이블이 비어도, 없어도 반드시 한 행을 냅니다. 빈
+# 결과가 왔다면 조회 자체가 이상한 것이므로 여기서 멈춥니다. 모르는 채로
+# 쓰면 스펙이 42행씩 중복되고, 중복은 조인하는 모든 질의를 조용히 부풀립니다.
+if not _spec_rows:
+    raise RuntimeError(
+        f"{SPEC_TABLE} 행 수를 확인하지 못했습니다. 중복 적재를 피하려고 멈춥니다. "
+        "KUSTO_URI 와 KUSTO_DATABASE 를 확인하고 다시 실행하세요."
+    )
+
+_spec_present = _spec_rows[0]["rows"]
+
+if _spec_present == 0:
     _spec_frame = spark.createDataFrame(
         to_rows(SPEC_ROWS, SPEC_COLUMNS), schema=spark_schema(SPEC_TABLE)
     )
     kusto_write(_spec_frame, SPEC_TABLE)
     print(f"{SPEC_TABLE:20} {_spec_frame.count():7,d}행 적재")
 else:
-    print(f"{SPEC_TABLE:20} 건너뜀 (첫 실행에서만 적재)")
+    print(f"{SPEC_TABLE:20} 건너뜀 (이미 {_spec_present:,}행)")
 
 if READINGS:
     _reading_frame = spark.createDataFrame(
