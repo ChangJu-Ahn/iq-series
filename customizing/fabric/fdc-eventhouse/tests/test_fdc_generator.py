@@ -16,6 +16,7 @@ from src.fdc_generator import (
     grid_timestamps,
     reading_value,
 )
+from src.fdc_runs import runs_by_equipment
 from src.fdc_sensors import SAMPLE_INTERVAL_SEC, sensor_by_code, sensors_for
 
 T0 = datetime(2026, 9, 4, 12, 0, 0, tzinfo=timezone.utc)
@@ -27,9 +28,9 @@ def profiles(facts):
 
 
 @pytest.fixture(scope="module")
-def day_rows(facts):
-    """24시간 백필. 이 규모에서만 드러나는 성질을 검사한다."""
-    return build_readings(facts, T0 - timedelta(hours=24), T0)
+def day_rows(facts, busy_window):
+    """공정이력이 있는 24시간. 이 규모에서만 드러나는 성질을 검사한다."""
+    return build_readings(facts, *busy_window)
 
 
 def test_align_to_grid_floors_to_interval():
@@ -93,10 +94,11 @@ def test_reading_value_stable_across_processes():
     assert len(outs) == 1, outs
 
 
-def test_backfill_and_live_agree_on_overlap(facts):
+def test_backfill_and_live_agree_on_overlap(facts, busy_window):
     """같은 타임스탬프를 백필로 만들든 라이브로 만들든 값이 같아야 한다."""
-    live = build_readings(facts, T0 + timedelta(minutes=3), T0 + timedelta(minutes=6))
-    backfill = build_readings(facts, T0 - timedelta(hours=2), T0 + timedelta(minutes=6))
+    base = busy_window[0]
+    live = build_readings(facts, base + timedelta(minutes=3), base + timedelta(minutes=6))
+    backfill = build_readings(facts, base - timedelta(hours=2), base + timedelta(minutes=6))
     key = lambda r: (r["reading_ts"], r["eqp_id"], r["sensor_code"])
     back_by_key = {key(r): r["value"] for r in backfill}
     assert live
@@ -104,10 +106,16 @@ def test_backfill_and_live_agree_on_overlap(facts):
         assert back_by_key[key(row)] == row["value"]
 
 
-def test_row_count_matches_grid(facts, profiles):
-    rows = build_readings(facts, T0, T0 + timedelta(minutes=3))
-    expected = sum(len(sensors_for(p.eqp_type)) for p in profiles.values()) * 6
-    assert len(rows) == expected == 288
+def test_running_row_count_matches_grid(facts):
+    """가동 중인 설비 하나는 격자 한 칸마다 그 유형의 센서를 전부 낸다."""
+    runs = runs_by_equipment(facts)
+    busiest = max(runs, key=lambda k: len(runs[k]))
+    run = runs[busiest][0]
+    start = align_to_grid(run.start)
+    rows = [r for r in build_readings(facts, start, start + timedelta(minutes=3))
+            if r["eqp_id"] == busiest and r["run_status"] == RUNNING]
+    eqp_type = next(e["eqp_type"] for e in facts.equipment if e["eqp_id"] == busiest)
+    assert len(rows) == len(sensors_for(eqp_type)) * 6 == 36
 
 
 def test_rows_have_no_duplicate_keys(day_rows):
@@ -123,7 +131,7 @@ def test_rows_carry_no_lot_columns(day_rows):
 
 def test_rows_have_expected_columns(day_rows):
     assert set(day_rows[0]) == {
-        "reading_ts", "eqp_id", "eqp_type", "step_code",
+        "reading_ts", "eqp_id", "eqp_type", "step_code", "run_status",
         "sensor_code", "value", "unit", "status",
     }
 
@@ -195,3 +203,94 @@ def test_every_equipment_appears(day_rows, profiles):
 def test_values_are_rounded(day_rows):
     for row in day_rows[:200]:
         assert row["value"] == round(row["value"], 4)
+
+
+from src.fdc_generator import IDLE, IDLE_INTERVAL_SEC, RUNNING
+from src.fdc_runs import runs_by_equipment, span
+from src.fdc_sensors import COMMON_SENSORS
+
+
+def _busiest_run_window(facts):
+    """런이 가장 많은 설비의 첫 런 앞뒤로 10분씩."""
+    runs = runs_by_equipment(facts)
+    busiest = max(runs, key=lambda k: len(runs[k]))
+    first = runs[busiest][0]
+    return first.start - timedelta(minutes=10), first.end + timedelta(minutes=10)
+
+
+def test_every_row_has_run_status(facts, busy_window):
+    rows = build_readings(facts, *busy_window)
+    assert rows
+    assert {r["run_status"] for r in rows} <= {RUNNING, IDLE}
+
+
+def test_both_states_appear(facts):
+    rows = build_readings(facts, *_busiest_run_window(facts))
+    assert any(r["run_status"] == RUNNING for r in rows)
+    assert any(r["run_status"] == IDLE for r in rows)
+
+
+def test_idle_rows_use_only_common_sensors(facts):
+    common = {s.sensor_code for s in COMMON_SENSORS}
+    rows = build_readings(facts, *_busiest_run_window(facts))
+    for row in rows:
+        if row["run_status"] == IDLE:
+            assert row["sensor_code"] in common
+
+
+def test_idle_rows_sit_on_the_five_minute_grid(facts):
+    rows = build_readings(facts, *_busiest_run_window(facts))
+    for row in rows:
+        if row["run_status"] == IDLE:
+            assert int(row["reading_ts"].timestamp()) % IDLE_INTERVAL_SEC == 0
+
+
+def test_running_rows_use_the_full_sensor_set(facts):
+    rows = build_readings(facts, *_busiest_run_window(facts))
+    seen = {}
+    for row in rows:
+        if row["run_status"] == RUNNING:
+            seen.setdefault(row["eqp_id"], set()).add(row["sensor_code"])
+    assert seen
+    for eqp_id, codes in seen.items():
+        eqp_type = next(
+            e["eqp_type"] for e in facts.equipment if e["eqp_id"] == eqp_id
+        )
+        assert codes == {s.sensor_code for s in sensors_for(eqp_type)}
+
+
+def test_idle_is_far_cheaper_than_running(facts, busy_window):
+    """유휴는 5분에 2종, 가동은 30초에 6종이다."""
+    rows = build_readings(facts, *busy_window)
+    running = sum(1 for r in rows if r["run_status"] == RUNNING)
+    assert 0 < len(rows) - running < running
+
+
+def test_no_duplicate_readings(facts):
+    rows = build_readings(facts, *_busiest_run_window(facts))
+    keys = [(r["eqp_id"], r["sensor_code"], r["reading_ts"]) for r in rows]
+    assert len(keys) == len(set(keys))
+
+
+def test_backfill_and_live_agree_on_run_status(facts):
+    """구간을 반으로 갈라 만들어도 통째로 만든 것과 같아야 한다."""
+    lo, hi = _busiest_run_window(facts)
+    mid = lo + (hi - lo) / 2
+    key = lambda r: (r["eqp_id"], r["sensor_code"], r["reading_ts"])
+    whole = {key(r): r["run_status"] for r in build_readings(facts, lo, hi)}
+    halves = {key(r): r["run_status"]
+              for r in build_readings(facts, lo, mid) + build_readings(facts, mid, hi)}
+    assert whole == halves
+
+
+def test_rows_after_the_mes_span_are_all_idle(facts):
+    _lo, hi = span(facts)
+    rows = build_readings(facts, hi, hi + timedelta(hours=1))
+    assert rows
+    assert all(r["run_status"] == IDLE for r in rows)
+
+
+def test_lot_id_never_leaks_into_rows(facts, busy_window):
+    """FDC 는 로트를 모른다. 계획서 '설계 결정' 참조."""
+    rows = build_readings(facts, *busy_window)
+    assert all("lot_id" not in r for r in rows)

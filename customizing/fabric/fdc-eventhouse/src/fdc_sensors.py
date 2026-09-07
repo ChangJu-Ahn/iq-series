@@ -91,6 +91,16 @@ def sensors_for(eqp_type: str) -> tuple[SensorDef, ...]:
     return COMMON_SENSORS + TYPE_SENSORS.get(eqp_type, ())
 
 
+
+def idle_sensors() -> tuple[SensorDef, ...]:
+    """설비가 멈춰 있을 때도 의미가 있는 센서.
+
+    챔버 압력이나 RF 파워는 멈춘 설비에서 측정 자체가 무의미하다. 그렇다고
+    0 을 내보내면 RF_POWER 의 alarm_min 이 1400 이라 유휴 내내 경보가 된다.
+    클린룸 주변 온도·습도는 설비 가동과 무관하게 계속 측정된다.
+    """
+    return COMMON_SENSORS
+
 def sensor_by_code(eqp_type: str, sensor_code: str) -> SensorDef:
     for sensor in sensors_for(eqp_type):
         if sensor.sensor_code == sensor_code:

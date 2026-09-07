@@ -18,18 +18,29 @@ import random
 from datetime import datetime, timedelta, timezone
 
 from src.fdc_anomaly import (
-    EXCURSION_PERIOD_SEC,
     EquipmentProfile,
     build_profiles,
-    excursion_for,
-    excursion_sign,
+    run_excursion,
     seed,
 )
-from src.fdc_sensors import SAMPLE_INTERVAL_SEC, SensorDef, sensors_for
+from src.fdc_runs import Run, run_at, runs_by_equipment
+from src.fdc_sensors import (
+    SAMPLE_INTERVAL_SEC,
+    SensorDef,
+    idle_sensors,
+    sensors_for,
+)
 
 NORMAL = "Normal"
 WARNING = "Warning"
 ALARM = "Alarm"
+
+RUNNING = "Run"
+IDLE = "Idle"
+
+# 유휴 샘플링 간격. 30초의 배수여야 한다. align_to_grid 가 epoch 기준이라
+# 배수이기만 하면 유휴 격자가 런 격자의 부분집합이 되어 중복이 없다.
+IDLE_INTERVAL_SEC = 300
 
 
 def align_to_grid(moment: datetime, interval_sec: int = SAMPLE_INTERVAL_SEC) -> datetime:
@@ -74,32 +85,34 @@ def noise(sensor: SensorDef, eqp_id: str, moment: datetime) -> float:
 
 
 def excursion_offset(
-    sensor: SensorDef, eqp_id: str, moment: datetime, profile: EquipmentProfile
+    sensor: SensorDef, run: Run | None, moment: datetime, profile: EquipmentProfile
 ) -> float:
-    """이상 구간의 이탈량.
+    """이상 구간의 이탈량. 런 밖이면 0 이다.
 
-    진폭은 MES 불량 실적에서 오고, 시간에 따른 세기는 느린 파형으로 준다.
-    항상 최대로 이탈하면 경보가 끊이지 않아 실습자가 '언제 이상해졌나'를
-    물을 수 없다. 파형을 제곱해 대부분의 시간은 잠잠하고 가끔 크게 튀게 한다.
+    진폭도 대상 센서도 시점도 전부 MES 불량 실적에서 온다. 그래야
+    Eventhouse 에서 찾은 이상이 MES 의 실제 공정이력과 맞아떨어진다.
     """
-    amplitude = excursion_for(profile, sensor.sensor_code)
-    if amplitude <= 0.0:
+    if run is None:
         return 0.0
-    phase = 2 * math.pi * (seed(eqp_id, sensor.sensor_code, "excursion") / 2**32)
-    wave = math.sin(2 * math.pi * moment.timestamp() / EXCURSION_PERIOD_SEC + phase)
-    pulse = max(0.0, wave) ** 2
+    scale = run_excursion(run, sensor.sensor_code, moment, profile)
+    if scale == 0.0:
+        return 0.0
     half = (sensor.normal_max - sensor.normal_min) / 2
-    return excursion_sign(eqp_id, sensor.sensor_code) * amplitude * half * pulse
+    return scale * half
 
 
 def reading_value(
-    sensor: SensorDef, eqp_id: str, moment: datetime, profile: EquipmentProfile
+    sensor: SensorDef,
+    eqp_id: str,
+    moment: datetime,
+    profile: EquipmentProfile,
+    run: Run | None = None,
 ) -> float:
     value = (
         sensor.base
         + diurnal(sensor, eqp_id, moment)
         + noise(sensor, eqp_id, moment)
-        + excursion_offset(sensor, eqp_id, moment, profile)
+        + excursion_offset(sensor, run, moment, profile)
     )
     return round(value, 4)
 
@@ -113,24 +126,45 @@ def classify(sensor: SensorDef, value: float) -> str:
 
 
 def build_readings(facts, start: datetime, end: datetime) -> list[dict]:
-    """구간 안의 모든 설비·센서 판독값.
+    """구간 안의 모든 판독값.
 
-    행 개수는 설비 8대 x 센서 6종 x 격자 수다. 30초 격자에서 3분 구간이면
-    8 x 6 x 6 = 288 행이다.
+    30초 격자를 하나만 깔고 각 시각을 런/유휴로 나눈다. 격자를 둘 만들지
+    않는 이유는 한 시각이 양쪽에 속해 중복 행이 생기는 것을 막기 위해서다.
+    IDLE_INTERVAL_SEC 가 30초의 배수이고 격자가 epoch 기준이라, 유휴 격자는
+    런 격자의 부분집합이다.
+
+    런 중에는 센서 6종을 30초마다, 유휴에는 공통 2종을 5분마다 낸다. 멈춘
+    설비의 챔버 압력을 30초마다 적는 FDC 는 없다.
+
+    로트 번호는 이상 배치 계산에만 쓰고 행에는 넣지 않는다. 어느 로트였는지는
+    MES 에 물어야 한다.
     """
     profiles = build_profiles(facts)
+    all_runs = runs_by_equipment(facts)
     moments = grid_timestamps(start, end)
+    idle = idle_sensors()
     rows: list[dict] = []
+
     for profile in profiles.values():
-        for sensor in sensors_for(profile.eqp_type):
-            for moment in moments:
-                value = reading_value(sensor, profile.eqp_id, moment, profile)
+        runs = all_runs.get(profile.eqp_id, [])
+        running_sensors = sensors_for(profile.eqp_type)
+        for moment in moments:
+            run = run_at(runs, moment)
+            if run is not None:
+                active, run_status = running_sensors, RUNNING
+            elif int(moment.timestamp()) % IDLE_INTERVAL_SEC == 0:
+                active, run_status = idle, IDLE
+            else:
+                continue
+            for sensor in active:
+                value = reading_value(sensor, profile.eqp_id, moment, profile, run)
                 rows.append(
                     {
                         "reading_ts": moment,
                         "eqp_id": profile.eqp_id,
                         "eqp_type": profile.eqp_type,
                         "step_code": profile.step_code,
+                        "run_status": run_status,
                         "sensor_code": sensor.sensor_code,
                         "value": value,
                         "unit": sensor.unit,

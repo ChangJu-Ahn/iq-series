@@ -23,8 +23,9 @@ T0 = datetime(2026, 9, 4, 12, 0, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture(scope="module")
-def readings(facts):
-    return build_readings(facts, T0, T0 + timedelta(minutes=3))
+def readings(facts, busy_window):
+    start = busy_window[0]
+    return build_readings(facts, start, start + timedelta(minutes=3))
 
 
 def test_ddl_uses_create_merge_not_create():

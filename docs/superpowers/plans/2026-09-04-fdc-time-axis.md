@@ -1062,7 +1062,7 @@ def readings(facts, busy_window):
 
 ```python
 from src.fdc_generator import IDLE, IDLE_INTERVAL_SEC, RUNNING
-from src.fdc_runs import runs_by_equipment
+from src.fdc_runs import runs_by_equipment, span
 from src.fdc_sensors import COMMON_SENSORS
 
 

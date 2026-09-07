@@ -15,14 +15,14 @@ T0 = datetime(2026, 9, 4, 12, 0, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture(scope="module")
-def readings(facts):
+def readings(facts, busy_window):
     """24시간 백필. 경보 비율 검사가 의미를 가지려면 이 규모가 필요하다."""
-    return build_readings(facts, T0 - timedelta(hours=24), T0)
+    return build_readings(facts, *busy_window)
 
 
 @pytest.fixture(scope="module")
-def checks(readings, facts):
-    return validate(readings, facts, watermark=T0 - timedelta(hours=24))
+def checks(readings, facts, busy_window):
+    return validate(readings, facts, watermark=busy_window[0])
 
 
 def test_all_eight_checks_run(checks):
@@ -94,9 +94,9 @@ def test_unknown_sensor_does_not_crash_status_check(readings, facts):
     assert next(c for c in result if c.number == 6).passed
 
 
-def test_zero_alarms_is_warning(facts):
+def test_zero_alarms_is_warning(facts, busy_window):
     """경보가 없으면 데이터는 멀쩡해도 실습 소재가 못 된다."""
-    short = build_readings(facts, T0, T0 + timedelta(seconds=30))
+    short = build_readings(facts, busy_window[0], busy_window[0] + timedelta(seconds=30))
     flat = [dict(r, status="Normal") for r in short]
     check = next(c for c in validate(flat, facts) if c.number == 7)
     assert not check.passed
