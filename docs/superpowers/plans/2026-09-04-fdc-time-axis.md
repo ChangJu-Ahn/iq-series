@@ -549,7 +549,7 @@ def test_lot_id_stays_out_of_the_schema():
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_schema.py -q 2>&1 | tail -8
 ```
 
-Expected: `run_status` 관련 5건 FAIL, `test_lot_id_stays_out_of_the_schema` 는 PASS.
+Expected: `run_status` 관련 **4건 FAIL**(`has_run_status`, `follows_step_code`, `spark_schema`, `create_command`). `test_reading_columns_match_schema_order` 와 `test_lot_id_stays_out_of_the_schema` 는 지금도 PASS 한다 — 앞의 것은 두 상수가 아직 나란히 틀렸기 때문이고, 뒤의 것은 애초에 `lot_id` 가 없기 때문이다. 둘 다 앞으로 어긋남을 막는 가드다.
 
 - [ ] **Step 4: 컬럼을 더한다**
 
@@ -591,7 +591,9 @@ READING_SCHEMA: tuple[tuple[str, str], ...] = (
 cd customizing/fabric/fdc-eventhouse && python3 -m pytest tests/test_fdc_schema.py -q 2>&1 | tail -8
 ```
 
-`build_readings` 가 아직 `run_status` 를 안 내므로, `readings` 픽스처를 쓰는 기존 테스트가 컬럼 불일치로 깨질 수 있다. 그것은 Task 4 에서 해결된다. 위 6건이 통과하면 이 스텝은 끝이다.
+`build_readings` 가 아직 `run_status` 를 안 내므로 `to_rows` 를 부르는 기존 테스트 **2건**(`test_to_rows_preserves_column_order`, `test_to_rows_keeps_datetime_objects`)이 `KeyError: "행에 없는 컬럼: ['run_status']"` 로 깨진다. **그대로 둔다** — Task 4 에서 생성기가 컬럼을 내면 저절로 풀린다. 이게 스키마와 생성기가 어긋나면 즉시 드러나게 하는 장치다.
+
+Expected: 신규 6건 전부 통과, 위 2건만 실패.
 
 - [ ] **Step 6: 커밋한다**
 

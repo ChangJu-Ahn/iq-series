@@ -144,3 +144,29 @@ def test_spark_schema_order_matches_to_rows(readings):
 def test_spark_schema_rejects_unknown_table():
     with pytest.raises(KeyError):
         spark_schema("no_such_table")
+
+def test_reading_schema_has_run_status():
+    assert ("run_status", "string") in READING_SCHEMA
+
+
+def test_run_status_follows_step_code():
+    names = [n for n, _ in READING_SCHEMA]
+    assert names.index("run_status") == names.index("step_code") + 1
+
+
+def test_reading_columns_match_schema_order():
+    """to_rows 가 컬럼 순서로 튜플을 만들므로 둘이 어긋나면 값이 밀린다."""
+    assert READING_COLUMNS == tuple(n for n, _ in READING_SCHEMA)
+
+
+def test_spark_schema_includes_run_status():
+    assert "run_status STRING" in spark_schema(READING_TABLE)
+
+
+def test_create_command_includes_run_status():
+    assert "run_status:string" in TABLE_DDL[READING_TABLE]
+
+
+def test_lot_id_stays_out_of_the_schema():
+    """FDC 는 로트를 모른다. 계획서 '설계 결정' 참조."""
+    assert "lot_id" not in {n for n, _ in READING_SCHEMA}

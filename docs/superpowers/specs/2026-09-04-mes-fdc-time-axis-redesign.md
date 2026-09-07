@@ -124,8 +124,8 @@ sched = random.Random(20260904)    # 신규. 소요시간·이송시간 전용
 | TEST | Prober | 120~240 | |
 
 스텝 사이 이송·대기 10~40분. **확산로를 배치로 모델링하지 않는다** — 여러 로트가
-겹치면 FDC 판독값의 `lot_id` 가 단일 값으로 성립하지 않는다(§5.2). 낱장 처리로도
-충분히 들어간다(§4.5).
+겹치면 한 시각에 런이 둘 이상이라 FDC 가 "이 시점에 이 설비가 무엇을 하고
+있었나"를 단일 값으로 답할 수 없다(§5.2). 낱장 처리로도 충분히 들어간다(§4.5).
 
 ### 4.3 스케줄 알고리즘
 
@@ -250,10 +250,23 @@ MES 시작점부터 커서를 **전진**시킨다(끝에서 역산하지 않는�
 
 | 컬럼 | 타입 | 값 |
 |---|---|---|
-| `lot_id` | string | 런 중이면 로트 ID, 유휴면 빈 값 |
+| `run_status` | string | 런 중이면 `"Run"`, 유휴면 `"Idle"` |
 
-`lot_id` 유무가 런/유휴 구분이므로 `run_status` 는 넣지 않는다. `step_seq` 는 MES
-route에서 얻을 수 있어 넣지 않는다. 키는 `(eqp_id, sensor_code, reading_ts)` 다.
+**`lot_id` 는 넣지 않는다.** 이 스펙의 초안은 `lot_id` 를 넣으라고 적었으나,
+구현 계획을 쓰며 소스를 대조하는 과정에서 `src/fdc_validate.py` 의 **첫 번째
+치명 검사**가 `lot_id` 를 금지하고 있음이 드러났다 — *"무중복 원칙: FDC 는
+로트를 모른다"*. 검사 쪽이 옳다고 판단해 스펙을 고쳤다.
+
+1. FDC 가 로트를 들고 있으면 "어느 로트가 이상했나"를 Eventhouse 하나로
+   답해 버려서, 시스템 경계를 넘는 시간 조인이라는 이 실습의 목표가 사라진다.
+2. MES 앵커는 배포마다 바뀌는데 Eventhouse 는 append-only 다. 이미 쓴
+   `lot_id` 는 재배포 순간 거짓이 되지만 `eqp_id` 는 그대로 유효하다.
+   에이전트가 자신 있게 인용하는 틀린 로트 번호는 무관한 잡음보다 해롭다.
+3. 런/유휴 판정에 필요한 건 설비 상태(SEMI E10)이지 로트가 아니다.
+
+로트는 `build_readings` 내부에서 이상 배치를 계산하는 데만 쓰고 행에는 남기지
+않는다. `step_seq` 는 MES route에서 얻을 수 있어 넣지 않는다. 키는
+`(eqp_id, sensor_code, reading_ts)` 다.
 
 **격자 생성 방식을 바꾼다.** `grid_timestamps()` 는 `(start, end]` 반열림이다
 (`fdc_generator.py:43-60`, 워터마크 중복 방지 목적). 이걸 런 구간에 그대로 쓰면
@@ -264,8 +277,8 @@ route에서 얻을 수 있어 넣지 않는다. 키는 `(eqp_id, sensor_code, re
 ```
 1. 전체 범위에 30초 격자를 깐다 (워터마크 초과분만)
 2. 각 시각 t 에 대해 in_time <= t < out_time 인 런을 찾는다
-3. 런이 있으면  → 센서 6종, lot_id 태깅
-   런이 없으면  → t 가 5분 격자 위일 때만 공통 센서 2종
+3. 런이 있으면  → 센서 6종, run_status="Run"
+   런이 없으면  → t 가 5분 격자 위일 때만 공통 센서 2종, run_status="Idle"
 ```
 
 300초는 30초의 배수이고 `align_to_grid` 가 epoch 기준이므로(`fdc_generator.py:35`)
@@ -312,7 +325,8 @@ route에서 얻을 수 있어 넣지 않는다. 키는 `(eqp_id, sensor_code, re
 설비 단위 상시 이상을 **런 단위**로 바꾼다.
 
 - `defect_code` 가 있는 `process_result` 의 `[in_time, out_time)` 에만 이탈을 싣는다
-- 시드를 `seed(lot_id, step_code, eqp_id, sensor_code)` 로 확장
+- 시드를 `seed(lot_id, step_code, eqp_id, defect_code)` 로 확장해 **런마다 흐를 센서를
+  하나만** 고른다. 후보 전부에 나눠 실으면 진폭이 희석돼 경보에 못 닿는다.
 - `hash()` 금지, `hashlib.sha256` 유지
 
 **주의: `defect_code` 와 `result` 는 독립이다.** `seed.py:140-147` 에서 불량코드는
@@ -373,7 +387,7 @@ Rework 인덱싱은 계속 성립한다. **QMS 코드 변경 없이 시각만 �
 | §4.6 불변식 테스트 | MCP 쓰기 경로 |
 | `db.py` wall-clock 잔여 3곳 | 설비 추가 |
 | FDC 구간을 MES에서 유도, 24h 캡 제거 | 확산로 배치 모델링 |
-| `lot_id` 컬럼 + 단일 타임라인 분류 | |
+| `run_status` 컬럼 + 단일 타임라인 분류 | `lot_id` 컬럼 (§5.2) |
 | 유휴는 공통 센서 2종만 | |
 | 런 단위 이상 주입 | |
 | 픽스처·문서 갱신 | |
@@ -396,19 +410,20 @@ Rework 인덱싱은 계속 성립한다. **QMS 코드 변경 없이 시각만 �
 **FDC**
 
 - 모든 `reading_ts` 가 `[MES min(in_time), now]` 안
-- `lot_id` 가 있는 판독값은 해당 런의 `[in_time, out_time)` 안
-- 유휴 판독값의 `lot_id` 는 비어 있고 센서는 공통 2종뿐
+- `run_status="Run"` 인 판독값은 해당 런의 `[in_time, out_time)` 안
+- 어떤 행에도 `lot_id` 가 없다 (`fdc_validate` 첫 치명 검사)
+- 유휴 판독값은 `run_status="Idle"` 이고 센서는 공통 2종뿐
 - 같은 `(eqp_id, sensor_code, reading_ts)` 가 두 번 나오지 않는다
 - 유휴 구간에 `Alarm` 이 없다 (§5.3 회귀 방지)
-- LOT0010 ETCH 구간에 `CHAMBER_TEMP` 이탈이 있다
+- 불량 런에 경보가 뜨고, **정상 런에는 경보가 뜨지 않는다**
 - 기존 252개 테스트가 갱신 후에도 통과
 
 **교차 시스템 (수동)**
 
 ```
-"LOT0010 은 왜 재작업했지?"
+"LOT0002 는 왜 재작업했지?"
   MES  → ETCH / EQP-ETCH01 / 구간 / defect_code=Particle / result=Rework
-  FDC  → 그 구간 CHAMBER_TEMP 이탈, lot_id=LOT0010
+  FDC  → 그 시각 EQP-ETCH01 의 CHAMBER_TEMP 경보 (로트는 모른다)
   QMS  → 해당 로트 검사 판정
 ```
 
