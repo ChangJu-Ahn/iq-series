@@ -1702,6 +1702,18 @@ if NOW > MES_TO:
 
 `timedelta` 는 셀 첫 줄 import 에 이미 있으므로 그대로 둔다. `span` 은 `fdc_runs` 가 인라인되면서 정의되므로 별도 import 가 필요 없다.
 
+- [ ] **Step 4b: 캡을 강제하던 기존 테스트를 뒤집는다**
+
+`tests/test_build_notebook.py::test_watermark_cell_caps_span` 이 캡의 존재를 강제한다. 캡을 없앴으니 이 테스트의 전제가 틀렸다. **지우지 말고 반대 불변식으로 바꾼다** — 다음 사람이 "구간이 길어지면 위험하다"며 캡을 되살리는 것을 막는 장치가 필요하다.
+
+```python
+def test_watermark_cell_does_not_cap_span(notebook):
+    """구간을 잘라내면 워터마크가 NOW 로 가서 건너뛴 구간이 영영 안 채워진다."""
+    cell = next(c.source for c in notebook.cells if "WATERMARK is None" in c.source)
+    assert "MAX_SPAN_HOURS" not in cell
+    assert "MES_FROM" in cell
+```
+
 - [ ] **Step 5: 설명 문구를 고친다**
 
 `_INTRO` 에서 백필을 설명하는 문장을 찾는다.

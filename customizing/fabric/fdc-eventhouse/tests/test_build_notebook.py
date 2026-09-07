@@ -5,6 +5,7 @@ from pathlib import Path
 import nbformat
 import pytest
 
+import build_notebook as bn
 from build_notebook import MODULE_ORDER, build_notebook, strip_local_imports
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -143,9 +144,11 @@ def test_watermark_cell_handles_missing_table(notebook):
     assert "WATERMARK = None" in cell
 
 
-def test_watermark_cell_caps_span(notebook):
-    cell = next(c.source for c in notebook.cells if "MAX_SPAN_HOURS" in c.source and "NOW" in c.source)
-    assert "MAX_SPAN_HOURS" in cell
+def test_watermark_cell_does_not_cap_span(notebook):
+    """구간을 잘라내면 워터마크가 NOW 로 가서 건너뛴 구간이 영영 안 채워진다."""
+    cell = next(c.source for c in notebook.cells if "WATERMARK is None" in c.source)
+    assert "MAX_SPAN_HOURS" not in cell
+    assert "MES_FROM" in cell
 
 
 def test_intro_states_the_cross_system_boundary(notebook):
@@ -164,3 +167,33 @@ def test_outro_has_runnable_kql(notebook):
 def test_notebook_cell_count_is_stable(notebook):
     # intro + parameters + 7 modules + gate + connect + watermark + build + validate + load + outro
     assert len(notebook.cells) == 1 + 1 + len(MODULE_ORDER) + 6 + 1 == 16
+
+
+def test_module_order_includes_fdc_runs():
+    """등록하지 않으면 노트북에서 span 이 정의되지 않는다."""
+    assert "fdc_runs" in bn.MODULE_ORDER
+
+
+def test_fdc_runs_comes_before_generator():
+    order = list(bn.MODULE_ORDER)
+    assert order.index("fdc_runs") < order.index("fdc_generator")
+
+
+def test_no_wall_clock_backfill_constant():
+    assert "BACKFILL_HOURS" not in bn._PARAMETERS
+    assert "BACKFILL_HOURS" not in bn._WATERMARK
+
+
+def test_no_span_cap():
+    assert "MAX_SPAN_HOURS" not in bn._PARAMETERS
+    assert "MAX_SPAN_HOURS" not in bn._WATERMARK
+
+
+def test_backfill_starts_from_the_mes_span():
+    assert "span(FACTS)" in bn._WATERMARK
+
+
+def test_notebook_defines_span_before_it_is_used(notebook):
+    """인라인된 소스에서 span 정의가 호출보다 앞에 있어야 한다."""
+    source = "\n".join(c.source for c in notebook.cells if c.cell_type == "code")
+    assert source.index("def span(") < source.index("span(FACTS)")

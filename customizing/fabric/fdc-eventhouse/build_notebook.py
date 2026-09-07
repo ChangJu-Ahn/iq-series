@@ -66,9 +66,14 @@ Query URI는 비밀값이 아닙니다. 인증은 `mssparkutils` 가 실행자 �
 
 ## 두 번째 실행부터
 
-첫 실행은 지난 24시간을 백필합니다. 이후 실행은 이미 적재된 마지막 시각
-(watermark)부터 지금까지만 채웁니다. 값이 (설비, 센서, 타임스탬프)만으로
-정해지므로 몇 번을 다시 돌려도 같은 시각에는 같은 값이 들어갑니다.
+첫 실행은 MES 공정이력이 걸쳐 있는 구간 전체를 백필합니다. 약 65시간이고
+10만 행 안팎입니다. 이후 실행은 이미 적재된 마지막 시각(watermark)부터
+지금까지만 채웁니다. 값이 (설비, 센서, 타임스탬프)만으로 정해지므로 몇 번을
+다시 돌려도 같은 시각에는 같은 값이 들어갑니다.
+
+설비가 돌고 있을 때만 공정 센서 6종을 30초 간격으로 내보냅니다. 멈춰 있는
+동안에는 주변 온도·습도 2종만 5분 간격으로 남습니다. `run_status` 컬럼으로
+구분할 수 있습니다.
 """
 
 _PARAMETERS = '''# Fabric 파이프라인이나 스케줄러에서 이 셀의 값을 덮어쓸 수 있습니다.
@@ -82,12 +87,7 @@ KUSTO_DATABASE = ""
 MES_BASE_URL = "https://mock-mes.greenrock-bb44c93a.koreacentral.azurecontainerapps.io"
 MES_API_KEY = ""
 
-# 첫 실행에서 거슬러 올라가 채울 시간. 차트에 하루 주기가 보이려면 24시간이 필요합니다.
-BACKFILL_HOURS = 24
 
-# 한 번에 만들 수 있는 최대 구간. 잡이 며칠 멈췄다 살아날 때 수백만 행을
-# 한 번에 쓰려다 세션이 죽는 것을 막습니다.
-MAX_SPAN_HOURS = 24
 '''
 
 _GATE = '''# MES 연결 게이트. 여기서 실패하면 이상 주입의 근거가 없으므로 진행하지 않습니다.
@@ -175,21 +175,28 @@ except Exception as exc:
 if WATERMARK is not None and WATERMARK.tzinfo is None:
     WATERMARK = WATERMARK.replace(tzinfo=timezone.utc)
 
+# 첫 실행은 MES 공정이력이 시작하는 시각부터 채웁니다. 벽시계 기준으로 최근
+# 몇 시간만 채우면 MES 가 아는 구간과 겹치지 않아서, 센서에서 찾은 이상을
+# 공정이력에서 확인할 수 없습니다. 이 노트북의 존재 이유가 사라집니다.
+MES_FROM, MES_TO = span(FACTS)
+
 if WATERMARK is None:
     MODE = "backfill"
-    START = NOW - timedelta(hours=BACKFILL_HOURS)
+    START = MES_FROM
 else:
     MODE = "live"
     START = WATERMARK
 
-# 잡이 오래 멈췄다 살아나면 구간이 며칠로 벌어집니다. 한 번에 다 쓰려다
-# 세션이 죽는 대신 최근 구간만 채우고, 다음 실행이 이어받게 합니다.
-_span = NOW - START
-if _span > timedelta(hours=MAX_SPAN_HOURS):
-    print(f"구간이 {_span} 로 너무 깁니다. 최근 {MAX_SPAN_HOURS}시간만 채웁니다.")
-    START = NOW - timedelta(hours=MAX_SPAN_HOURS)
-
-print(f"모드={MODE} · watermark={WATERMARK} · 생성 구간 {START} ~ {NOW}")
+# 구간을 잘라내지 않습니다. 잘라내면 watermark 가 잘린 지점이 아니라 NOW 로
+# 가버려서 건너뛴 구간을 다시는 채우지 않습니다. 유휴 구간은 5분 간격 2종이라
+# 며칠이 밀려도 수만 행에 그칩니다.
+print(f"모드={MODE} · watermark={WATERMARK}")
+print(f"MES 공정이력 {MES_FROM} ~ {MES_TO}")
+print(f"생성 구간 {START} ~ {NOW}")
+if NOW > MES_TO:
+    _stale = NOW - MES_TO
+    print(f"  MES 배포 후 {_stale.days}일 {_stale.seconds // 3600}시간 지났습니다."
+          f" 그 이후 구간은 전부 유휴로 채웁니다.")
 '''
 
 _BUILD = '''SPEC_ROWS = build_sensor_spec_rows()
@@ -276,7 +283,7 @@ fdc_sensor_reading
 
 FDC만으로는 절반까지밖에 못 갑니다. 나머지는 MES와 QMS에 물어야 합니다.
 
-- 지난 24시간 중 경보가 가장 많았던 설비는 어디이고, **그 시각에 그 설비에서
+- 경보가 가장 많았던 설비는 어디이고, **그 시각에 그 설비에서
   어떤 로트를 처리하고 있었나요?** (FDC → MES)
 - 그 로트들은 품질 검사를 통과했나요? (MES → QMS)
 - QMS에서 `Overlay` 결함이 나온 로트를 처리한 설비의 **온도 추이**는 어땠나요?
