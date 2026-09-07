@@ -249,23 +249,33 @@ _OUTRO = """## 다음 단계
 
 노트북 오른쪽 위 **Run > Schedule** 에서 분 단위 반복을 켭니다. 3분으로 두면
 실제 팹에 가깝지만 하루 480번 Spark 세션이 뜹니다. 용량이 걱정되면 15분으로
-두세요. **해상도는 그대로 30초입니다.** 잡 주기와 데이터 해상도는 별개이고,
-매 실행이 watermark부터 지금까지의 격자를 통째로 채우기 때문입니다.
+두세요. **해상도는 그대로입니다**(가동 30초 · 유휴 5분). 잡 주기와 데이터 해상도는
+별개이고, 매 실행이 watermark부터 지금까지의 격자를 통째로 채우기 때문입니다.
 
 ### 2. Eventhouse에서 확인하기
 
+데이터는 MES 공정이력 구간(약 65시간)을 덮습니다. 그 이후 시각은 전부 유휴라
+`ago(24h)` 로 거르면 가동 구간을 통째로 놓칠 수 있습니다. 먼저 구간을 봅니다.
+
 ```kusto
-// 지금 이상한 설비는?
+// 데이터가 어느 구간을 덮고 있나?
 fdc_sensor_reading
-| where reading_ts > ago(24h) and status != "Normal"
-| summarize 이상 = count() by eqp_id, sensor_code, status
-| order by 이상 desc
+| summarize 시작 = min(reading_ts), 종료 = max(reading_ts), 행 = count() by run_status
+```
+
+```kusto
+// 경보가 몰린 설비와 시각. 교차 질의의 출발점입니다.
+fdc_sensor_reading
+| where status == "Alarm" and run_status == "Run"
+| summarize 건수 = count(), 시작 = min(reading_ts), 종료 = max(reading_ts)
+    by eqp_id, sensor_code
+| order by 건수 desc
 ```
 
 ```kusto
 // 설비별 주변 온도 추이. 공통 센서라 전 설비를 한 차트에서 비교합니다.
 fdc_sensor_reading
-| where reading_ts > ago(24h) and sensor_code == "AMBIENT_TEMP"
+| where sensor_code == "AMBIENT_TEMP"
 | make-series avg(value) default=0 on reading_ts step 10m by eqp_id
 | render timechart
 ```
@@ -273,7 +283,7 @@ fdc_sensor_reading
 ```kusto
 // 한계치는 판독값에 복사하지 않고 스펙 테이블과 조인해 얻습니다.
 fdc_sensor_reading
-| where reading_ts > ago(1h)
+| where run_status == "Run"
 | join kind=inner fdc_sensor_spec on eqp_type, sensor_code
 | extend 여유 = normal_max - value
 | project reading_ts, eqp_id, sensor_code, value, normal_min, normal_max, 여유
