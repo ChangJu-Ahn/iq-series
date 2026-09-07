@@ -143,6 +143,12 @@ def kusto_write(frame, table):
         .option("kustoTable", table)
         .option("accessToken", kusto_token())
         .option("tableCreateOptions", "CreateIfNotExist")
+        # 커넥터 기본값이긴 하지만 명시합니다. 이 노트북의 중복 방지는 "쓰기는
+        # 전부 성공하거나 전부 실패한다" 에 기대고 있습니다. Queued 로 바꾸면
+        # 워커 일부만 안착할 수 있는데, 행이 설비별로 묶여 있어서 다음 실행의
+        # 전역 max(reading_ts) 가 안 써진 설비를 통째로 건너뜁니다. 그 설비의
+        # 그 구간은 영구히 빈 채로 남고, 화면에는 아무 경고도 뜨지 않습니다.
+        .option("writeMode", "Transactional")
         .mode("Append")
         .save()
     )

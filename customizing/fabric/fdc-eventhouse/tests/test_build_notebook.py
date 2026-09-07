@@ -133,6 +133,17 @@ def test_spec_table_write_is_gated_on_its_own_row_count(notebook):
     assert 'MODE == "backfill"' not in load
 
 
+def test_write_mode_is_pinned_to_transactional(notebook):
+    """중복 방지가 "전부 성공 아니면 전부 실패" 에 기대고 있다.
+
+    Queued 로 두면 워커 일부만 안착할 수 있고, 행이 설비별로 묶여 있어서
+    다음 실행의 전역 max(reading_ts) 가 안 써진 설비를 통째로 건너뛴다.
+    커넥터 기본값이 Transactional 이지만 기본값에 기대지 않고 못 박는다.
+    """
+    cell = next(c.source for c in notebook.cells if "def kusto_write" in c.source)
+    assert '.option("writeMode", "Transactional")' in cell
+
+
 def test_spec_gate_rejects_partial_loads(notebook):
     """0 이 아니면 무조건 건너뛰면 부분 적재가 영구히 방치된다.
 
