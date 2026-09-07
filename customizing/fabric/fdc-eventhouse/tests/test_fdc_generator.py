@@ -190,10 +190,28 @@ def test_unhinted_sensors_never_alarm(day_rows, profiles):
         assert row["sensor_code"] in hinted, (row["eqp_id"], row["sensor_code"], row["status"])
 
 
-def test_worst_equipment_has_more_alarms_than_best(day_rows):
-    """Eventhouse 에서 이상 설비를 찾으면 MES 불량률 상위 설비가 나와야 한다."""
-    alarms = Counter(r["eqp_id"] for r in day_rows if r["status"] != NORMAL)
-    assert alarms["EQP-CMP01"] > alarms["EQP-IMPL01"]
+def test_worst_equipment_has_more_alarms_than_best(day_rows, profiles):
+    """Eventhouse 에서 이상 설비를 찾으면 MES 불량률 상위 설비가 나와야 한다.
+
+    `Alarm` 으로 센다. 이전에는 `!= NORMAL`(Warning+Alarm)로 세면서 이름만
+    alarms 였는데, 그 혼동이 README 에 그대로 새어 나가 참가자 화면과 2.4배
+    어긋나는 수치가 실렸다. README 의 대표 질의는 `status == "Alarm"` 이다.
+    """
+    ordered = sorted(profiles.values(), key=lambda p: p.defect_rate)
+    best, worst = ordered[0].eqp_id, ordered[-1].eqp_id
+    alarms = Counter(r["eqp_id"] for r in day_rows if r["status"] == ALARM)
+    assert alarms[worst] > alarms[best], dict(alarms)
+
+
+def test_cleanest_equipment_stays_quiet(day_rows, profiles):
+    """가장 깨끗한 설비는 경보를 내지 않는다. 데모의 대조군이다.
+
+    진폭 공식만으로는 확인할 수 없다. 값에 자연 잡음이 얹히므로 진폭이
+    문턱 아래여도 경보가 날 수 있다. 그래서 생성된 데이터로 직접 센다.
+    """
+    cleanest = min(profiles.values(), key=lambda p: p.defect_rate)
+    alarms = [r for r in day_rows if r["eqp_id"] == cleanest.eqp_id and r["status"] == ALARM]
+    assert not alarms, (cleanest.eqp_id, cleanest.defect_rate, len(alarms))
 
 
 def test_every_equipment_appears(day_rows, profiles):

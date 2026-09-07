@@ -203,11 +203,47 @@ def test_fallback_sensor_exists_on_every_type():
 
 
 def test_lowest_severity_stays_below_min_alarm_ratio(profiles):
-    """가장 깨끗한 설비는 경보(정상 반폭의 1.5배)에 닿지 말아야 한다."""
-    profile = profiles["EQP-IMPL01"]
+    """가장 깨끗한 설비는 경보(정상 반폭의 1.5배)에 닿지 말아야 한다.
+
+    설비 이름을 하드코딩하지 않고 프로파일에서 최저 불량률 설비를 뽑는다.
+    픽스처를 다시 뜨면 어느 설비가 가장 깨끗한지 바뀔 수 있고, 그때
+    하드코딩된 이름은 "이 설비가 조용해야 한다"가 아니라 "이 설비가
+    존재해야 한다"를 검사하게 된다.
+
+    이 여유는 구조적으로 얇다. 진폭이 설비 자신의 불량률만의 함수이므로
+    경계는 불량률 축 위의 한 점이고, 픽스처에서 가장 깨끗한 두 설비의
+    불량률 차가 0.015 밖에 안 된다(IMPL01 0.167 · PHOT01 0.182). "일곱 대는
+    경보를 내고 가장 깨끗한 한 대는 조용하다"를 만족시키려면 경계가 그
+    0.015 안에 들어와야 한다. 상수를 어떻게 고르든 여유는 0.06 을 넘지
+    못한다. 실측으로 확인한 사실이고, 상수 탓이 아니다.
+    """
+    profile = min(profiles.values(), key=lambda p: p.defect_rate)
     run = _demo_run(profile.eqp_id)
     chosen = run_sensor(run, profile.eqp_type)
     assert abs(run_excursion(run, chosen, run.end - _ONE_SEC, profile)) < 1.5
+
+
+def test_amplitude_boundary_leaves_the_cleanest_equipment_quiet(profiles):
+    """진폭 경계가 최저 설비 위에 있는지 확인한다.
+
+    진폭이 1.5(가장 좁은 경보 문턱) 아래라고 해서 그 설비가 반드시 조용한
+    것은 아니다. 값에는 자연 잡음이 얹히고 잡음이 경보까지 밀어 올릴 수
+    있다. 그래서 "경계 아래면 침묵" 같은 단정은 여기서 하지 않는다.
+    실제 침묵 여부는 생성된 데이터로 확인한다
+    (test_fdc_generator.py::test_cleanest_equipment_stays_quiet).
+
+    이 여유는 구조적으로 얇다. 진폭이 설비 자신의 불량률만의 함수이므로
+    경계는 불량률 축 위의 한 점이고, 픽스처에서 가장 깨끗한 두 설비의
+    불량률 차가 0.015 밖에 안 된다(IMPL01 0.167 · PHOT01 0.182). 상수를
+    어떻게 고르든 여유는 0.06 을 넘지 못한다. 실측으로 확인한 사실이고
+    상수 선택 탓이 아니다.
+    """
+    cleanest = min(profiles.values(), key=lambda p: p.defect_rate)
+    boundary = (1.5 - EXCURSION_MIN) / (EXCURSION_MAX - EXCURSION_MIN)
+    assert cleanest.defect_rate < boundary, (
+        f"가장 깨끗한 {cleanest.eqp_id}({cleanest.defect_rate:.3f}) 의 진폭이 "
+        f"경보 문턱에 닿는다. 경계 {boundary:.3f}"
+    )
 
 
 def test_excursion_sign_is_deterministic_and_mixed(profiles):
