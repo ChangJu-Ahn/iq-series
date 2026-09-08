@@ -196,17 +196,35 @@ def test_watermark_query_tolerates_missing_table():
     assert query.index("union") < query.index("datatable(")
 
 
-def test_watermark_query_datatable_leg_declares_the_column_it_aggregates():
+def test_watermark_query_datatable_leg_declares_every_column_it_touches():
     """빈 결과에는 컬럼이 없어 max(reading_ts) 가 SEM0100 으로 죽는다.
 
-    스텁 레그가 집계 대상 컬럼을 실제 테이블과 같은 타입으로 선언해야 한다.
-    타입이 어긋나면 outer union 이 접미사 붙은 컬럼 두 개를 만들어
-    `reading_ts` 라는 이름 자체가 사라진다.
+    스텁 레그가 쿼리에서 건드리는 컬럼을 **전부** 실제 테이블과 같은 타입으로
+    선언해야 한다. 타입이 어긋나면 outer union 이 접미사 붙은 컬럼 두 개를
+    만들어 그 이름 자체가 사라진다.
+
+    컬럼 이름을 여기 박아 두지 않는다. 쿼리가 참조하는 컬럼을 스키마와
+    대조해 찾아낸다. 앵커 드리프트를 잡으려고 run_status 를 더할 때 스텁
+    레그를 같이 고치지 않아 첫 실행이 깨졌었다 -- 이름을 박아 둔 테스트는
+    새 컬럼이 늘어난 것을 모른다.
     """
+    import re
+
     query = watermark_query()
-    declared = dict(READING_SCHEMA)["reading_ts"]
-    assert declared == "datetime", "스키마가 바뀌었으면 스텁 레그도 함께 바꿔야 한다"
-    assert f"datatable(reading_ts:{declared})[]" in query
+    schema = dict(READING_SCHEMA)
+
+    leg_start = query.index("datatable(")
+    leg = query[leg_start:query.index("]", leg_start) + 1]
+
+    referenced = {c for c in schema if re.search(rf"\b{c}\b", query)}
+    assert referenced, "쿼리가 스키마 컬럼을 하나도 안 쓴다면 검사가 무의미하다"
+
+    for col in sorted(referenced):
+        assert f"{col}:{schema[col]}" in leg, (
+            f"쿼리가 {col} 을 쓰는데 스텁 레그가 선언하지 않았다."
+            f" 첫 실행에서 그 컬럼이 없어 쿼리가 죽거나 null 이 된다. 레그: {leg}"
+        )
+
     assert "max(reading_ts)" in query
 
 

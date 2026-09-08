@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from src.fdc_generator import RUNNING
+
 SPEC_TABLE = "fdc_sensor_spec"
 READING_TABLE = "fdc_sensor_reading"
 
@@ -114,7 +116,7 @@ def to_rows(records: list[dict], columns: tuple[str, ...]) -> list[tuple]:
 
 
 def watermark_query(table: str = READING_TABLE) -> str:
-    """마지막으로 적재한 시각. 테이블이 없으면 null 한 행이 온다.
+    """마지막으로 적재한 시각과, 그 데이터가 어느 앵커에서 나왔는지.
 
     테이블이 없어도 예외를 내지 않아야 한다. 그래야 '진짜 첫 실행' 과 '조회
     실패' 를 구분할 수 있다. 구분하지 못하면 토큰 만료나 스로틀링 한 번이
@@ -131,12 +133,23 @@ def watermark_query(table: str = READING_TABLE) -> str:
     `datatable` 레그를 하나 붙인다. 이 레그가 두 가지를 동시에 해결한다.
 
     1. 해석 성공이 최소 1건이 되어 fuzzy union 이 성립한다
-    2. `reading_ts` 의 타입을 제공하므로 뒤따르는 `max(reading_ts)` 가
+    2. 집계 대상 컬럼의 타입을 제공하므로 뒤따르는 `max` / `maxif` 가
        컬럼을 해석할 수 있다 (빈 결과에는 컬럼이 없어 SEM0100 으로 죽는다)
+
+    `last_run_ts` 는 **적재된 데이터가 어느 MES 앵커에서 나왔는지**를 알려준다.
+    앵커 이후는 전부 유휴라 가동 표본의 최댓값이 앵커보다 정확히 한 격자(30초)
+    이르기 때문이다. 이 값을 새로 조회한 MES 의 앵커와 대조하면 그 사이에
+    앵커가 움직였는지 알 수 있다.
+
+    두 값을 한 쿼리로 얻는 이유는 왕복을 줄이려는 것만이 아니다. 따로 물으면
+    두 값이 서로 다른 스냅샷에서 와서, 그 사이에 다른 실행이 끼어들면 없는
+    드리프트를 보고하게 된다.
     """
     return (
-        f"union isfuzzy=true (datatable(reading_ts:datetime)[]), {table}"
-        " | summarize last_ts = max(reading_ts)"
+        f"union isfuzzy=true (datatable(reading_ts:datetime, run_status:string)[]),"
+        f" {table}"
+        " | summarize last_ts = max(reading_ts),"
+        f' last_run_ts = maxif(reading_ts, run_status == "{RUNNING}")'
     )
 
 

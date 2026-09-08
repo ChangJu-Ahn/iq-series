@@ -202,6 +202,7 @@ NOW = datetime.now(timezone.utc)
 try:
     _row = kusto_read(watermark_query()).collect()
     WATERMARK = _row[0]["last_ts"] if _row else None
+    LOADED_RUN_TS = _row[0]["last_run_ts"] if _row else None
 except Exception as exc:
     # 여기서 첫 실행으로 간주하고 넘어가면 안 됩니다. watermark_query 는
     # 테이블이 없어도 예외를 내지 않습니다(항상 해석되는 datatable 레그를
@@ -245,6 +246,42 @@ if WATERMARK is not None and WATERMARK > NOW + timedelta(minutes=5):
 # 몇 시간만 채우면 MES 가 아는 구간과 겹치지 않아서, 센서에서 찾은 이상을
 # 공정이력에서 확인할 수 없습니다. 이 노트북의 존재 이유가 사라집니다.
 MES_FROM, MES_TO = span(FACTS)
+
+# 적재된 데이터가 지금 조회한 MES 와 같은 시간축인지 확인합니다.
+#
+# MES 는 EmptyDir 볼륨을 쓰고 0개까지 축소되므로, 콜드스타트할 때마다 시드를
+# 다시 돌립니다. 배포에 MES_ANCHOR 가 박혀 있으면 몇 번을 재시드해도 같은
+# 데이터가 나오지만, 그 값이 없으면 앵커가 재시작 시각으로 잡혀 공정이력
+# 전체가 통째로 평행이동합니다.
+#
+# 그러면 이 노트북은 조용히 어긋난 데이터를 이어붙입니다. watermark 이후만
+# 만들기 때문에 행이 겹치지도 않고 검증도 통과합니다. 한 테이블 안에 서로
+# 다른 시간축의 조각이 쌓일 뿐입니다. 앵커가 네 시간 움직인 뒤 한 번만 더
+# 적재해도 테이블의 40% 가 라이브 MES 와 모순됩니다. 그때 에이전트는 센서
+# 이상을 공정이력에서 확인하지 못하거나, 더 나쁘게는 엉뚱한 로트를 답합니다.
+#
+# 가동 표본의 최댓값이 앵커보다 정확히 한 격자(30초) 이르므로, 그 값을 새로
+# 조회한 앵커와 대조하면 이동을 알아낼 수 있습니다.
+if LOADED_RUN_TS is not None:
+    if LOADED_RUN_TS.tzinfo is None:
+        # WATERMARK 와 같은 이유로 astimezone 입니다. 위 주석 참고.
+        LOADED_RUN_TS = LOADED_RUN_TS.astimezone(timezone.utc)
+    ANCHOR_DRIFT = (MES_TO - timedelta(seconds=30)) - LOADED_RUN_TS
+    if abs(ANCHOR_DRIFT) > timedelta(minutes=5):
+        raise RuntimeError(
+            f"MES 앵커가 {ANCHOR_DRIFT} 만큼 움직였습니다."
+            f" 적재된 데이터는 앵커 {LOADED_RUN_TS + timedelta(seconds=30)} 기준인데"
+            f" 지금 조회한 MES 는 {MES_TO} 입니다."
+            " 이대로 이어붙이면 한 테이블에 서로 다른 시간축이 섞여, 센서 이상을"
+            " 공정이력에서 확인할 수 없게 됩니다."
+            "\\n\\n해결: MES 를 명시적 앵커로 재배포한 뒤 이 Eventhouse 를 비우고"
+            " 처음부터 다시 적재하세요."
+            "\\n  az deployment group create -g <rg> -f infra/main.bicep"
+            " -p mesAnchor='2026-09-15T00:00:00Z'"
+            "\\n  .drop table fdc_sensor_reading"
+            "\\n  .drop table fdc_sensor_spec"
+            "\\n\\n앵커를 명시하면 MES 가 몇 번 재시작해도 데이터가 그대로입니다."
+        )
 
 if WATERMARK is None:
     MODE = "backfill"
