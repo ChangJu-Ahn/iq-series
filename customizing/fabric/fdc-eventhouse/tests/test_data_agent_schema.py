@@ -317,12 +317,15 @@ def test_the_documented_mis_join_damage_is_actually_measured():
     inflation = re.search(r"결과가 (\d+(?:\.\d+)?)배로 부풀", doc)
     garbage = re.search(r"그중 (\d+(?:\.\d+)?)%\s*가 엉뚱한", doc)
     flip = re.search(r"(\d+(?:\.\d+)?)%\s*에서 판정이\s*\n?뒤집힙니다", doc)
-    blind = re.search(r"뒤집힌 판정의\s*\n?(\d+(?:\.\d+)?)%\s*가 이렇게 단위가 같은", doc)
+    blind = re.search(r"`CHAMBER_TEMP` 가 (\d+(?:\.\d+)?)%인데", doc)
 
     assert inflation, "조인을 틀렸을 때 행이 부푼다는 사실이 문서에서 사라졌다"
     assert garbage, "부푼 행의 몇 %가 쓰레기인지가 문서에서 사라졌다"
     assert flip, "판정이 뒤집힌다는 사실이 문서에서 사라졌다"
-    assert blind, "뒤집힘 대부분이 단위가 같아 안 보인다는 안내가 사라졌다"
+    assert blind, (
+        "뒤집힘 대부분이 단위가 같아 안 보인다는 안내가 사라졌다."
+        " CHAMBER_TEMP 가 그 몫을 전부 가지므로 그 비중이 곧 눈먼 비율이다"
+    )
 
     rows, by_code = _joined_against_code_only()
     joined = sum(len(by_code[r["sensor_code"]]) for r in rows)
@@ -382,4 +385,106 @@ def test_the_doc_tells_the_agent_the_verdict_is_already_in_the_row():
     assert mismatched == 0, (
         f"판독 {mismatched} 행의 status/unit 이 자기 스펙과 다르다."
         " 그렇다면 '조인이 필요 없다'는 안내가 거짓이 된다"
+    )
+
+
+def test_the_doc_lists_exactly_the_columns_that_still_need_a_join():
+    """조인이 필요한 컬럼 목록이 실제 스키마와 맞아야 한다.
+
+    QMS 가 스펙 20컬럼 중 9개만 복제돼 있고 나머지 11개는 조인해야 한다는
+    것을 세어 문서에 나열했다고 알려 왔다. 판정에 필요한 값만 복제한
+    결과인데, 그 경계가 여기와 겹친다. 판정은 조인 없이, 나머지는 조인으로.
+
+    목록을 손으로 적어 두면 스키마가 바뀔 때 낡는다. 컬럼 하나를 판독 행에
+    복제하고 문서를 안 고치면 "조인해야 한다"는 안내가 거짓이 되고, 참가자는
+    필요 없는 조인을 하다 복합키를 놓친다. 양방향으로 검사한다.
+    """
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root))
+    from src.fdc_schema import READING_SCHEMA, SPEC_SCHEMA
+
+    reading_columns = {c for c, _ in READING_SCHEMA}
+    needs_join = {c for c, _ in SPEC_SCHEMA if c not in reading_columns}
+    assert needs_join, "스펙 컬럼이 전부 복제됐다면 조인 안내 자체를 지워야 한다"
+
+    marker = "### 조인이 필요한 질문도 있습니다"
+    doc = _doc()
+    assert marker in doc, "조인이 필요한 경우를 알려주는 절이 사라졌다"
+    # 절로 자르는 것으로는 부족하다. 이 절 안에 스펙 컬럼 표가 통째로 들어
+    # 있어서, 목록에서 컬럼을 지워도 아래 표가 통과시킨다. QMS 가 겪은
+    # "judgment 가 세 테이블에 있어 한 절에서 지워도 다른 절이 통과"와 같은
+    # 일이 한 절 안에서 벌어진다. 목록 문단만 잘라낸다.
+    lead = "나머지는 조인해야 합니다."
+    start = doc.index(marker)
+    assert lead in doc[start:], "조인 대상을 여는 문장이 사라졌다"
+    body = doc[doc.index(lead, start) + len(lead) :].lstrip("\n")
+    listing = body[: body.index("\n\n")]
+    listed = set(re.findall(r"`([A-Za-z_]+)`", listing))
+
+    assert listed == needs_join, (
+        f"조인해야 하는 컬럼은 {sorted(needs_join)} 인데 문서 목록은 {sorted(listed)} 다."
+        " 복제된 컬럼을 조인하라고 하면 참가자가 필요 없는 조인을 하다 복합키를 놓친다"
+    )
+
+
+def test_the_blame_table_matches_which_sensors_actually_do_the_damage():
+    """부풀림과 뒤집힘의 기여도 표가 실측과 맞아야 한다.
+
+    피해가 센서마다 다른 모양으로 나온다. 환경 센서는 유형이 일곱인데
+    한계치가 같아 집계만 부풀리고 판정은 그대로다. 챔버 센서 둘만 판정을
+    뒤집는다. 참가자에게 어디를 조심하라고 말하려면 이 구분이 맞아야 한다.
+
+    숫자를 손으로 적어 두면 재배포 후 낡는다. 픽스처에서 직접 세어 대조한다.
+    """
+    from collections import Counter
+
+    rows, by_code = _joined_against_code_only()
+
+    inflate: Counter = Counter()
+    flip: Counter = Counter()
+    for row in rows:
+        specs = by_code[row["sensor_code"]]
+        if len(specs) > 1:
+            inflate[row["sensor_code"]] += len(specs) - 1
+        for spec in specs:
+            if spec["eqp_type"] == row["eqp_type"]:
+                continue
+            if _rejudge(row["value"], spec) != row["status"]:
+                flip[row["sensor_code"]] += 1
+
+    doc = _doc()
+    marker = "### 무엇이 부풀리고 무엇이 뒤집는가"
+    assert marker in doc, "어느 센서가 무슨 피해를 내는지 알려주는 절이 사라졌다"
+    section = doc[doc.index(marker) :]
+    section = section[: section.index("\n### ")]
+
+    for code in sorted(set(inflate) | set(flip)):
+        line = next(
+            (ln for ln in section.splitlines() if re.search(rf"`{re.escape(code)}`", ln)),
+            None,
+        )
+        assert line, f"`{code}` 가 피해를 내는데 표에 없다"
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        assert len(cells) == 5, f"`{code}` 행의 칸 수가 달라졌다: {line.strip()}"
+
+        def cell(index: int) -> int:
+            digits = re.sub(r"[^\d]", "", cells[index])
+            assert digits, f"`{code}` 행 {index}번 칸에 숫자가 없다: {cells[index]}"
+            return int(digits)
+
+        assert cell(2) == inflate[code], (
+            f"`{code}` 의 부풀림 기여는 {inflate[code]:,} 인데 표는 {cells[2]} 라고 적었다"
+        )
+        assert cell(3) == flip[code], (
+            f"`{code}` 는 판정 {flip[code]:,} 건을 뒤집는데 표는 {cells[3]} 이라고 적었다"
+        )
+
+    # 환경 센서가 부풀림의 대부분을 내면서 판정은 건드리지 않는다는 것이
+    # 이 절의 핵심이다. 그 성질이 사라지면 표의 구분도 의미를 잃는다.
+    silent = sum(v for k, v in inflate.items() if not flip[k])
+    assert silent > sum(inflate.values()) * 0.5, (
+        "판정을 뒤집지 않으면서 집계만 부풀리는 몫이 절반 아래로 떨어졌다."
+        " '조용한 피해'라는 구분을 다시 세워야 한다"
     )
