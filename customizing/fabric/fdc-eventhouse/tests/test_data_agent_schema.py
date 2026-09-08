@@ -222,22 +222,8 @@ def test_the_schema_doc_joins_the_spec_table_on_the_full_key():
         )
 
 
-def test_the_documented_mis_join_damage_is_actually_measured():
-    """문서가 인용한 부풀림 배수와 오짝 비율이 실제 데이터와 맞아야 한다.
-
-    QMS 가 `assert len(results) == 10` 처럼 개수만 세는 검사의 함정을 알려
-    왔다. 문자열이 문서에 있는지만 보면 숫자가 낡아도 통과한다. 참가자는
-    낡은 숫자로 위험을 잰다.
-
-    이 검사를 만들자마자 문서가 틀린 것이 드러났다. 처음엔 "판독값의 40.8%
-    가 다른 유형의 한계치에 붙는다"고 적었는데, 그건 스펙에서 코드마다 한
-    행만 고른다고 가정한 값이었다. `inner join` 은 고르지 않고 **모든 짝을
-    만든다.** 실제로는 결과가 3.6배로 부풀고 그중 72%가 쓰레기다. 집계가
-    통째로 어긋나므로 훨씬 나쁘다.
-
-    정확한 값을 못 박지는 않는다. 앵커를 고정해 재배포하면 픽스처를 다시
-    뜨고 그때 설비 구성이 조금 달라진다. 크게 어긋날 때만 잡는다.
-    """
+def _joined_against_code_only():
+    """`on sensor_code` 로 조인했을 때의 판독·스펙 짝을 만든다."""
     import json
     import sys
     from collections import defaultdict
@@ -249,12 +235,6 @@ def test_the_documented_mis_join_damage_is_actually_measured():
     from src.fdc_sensors import build_sensor_spec_rows
     from src.mes_probe import MesFacts
 
-    doc = _doc()
-    inflation = re.search(r"결과가 (\d+(?:\.\d+)?)배로 부풀", doc)
-    garbage = re.search(r"그중 (\d+(?:\.\d+)?)%\s*가 엉뚱한", doc)
-    assert inflation, "조인을 틀렸을 때 행이 부푼다는 사실이 문서에서 사라졌다"
-    assert garbage, "부푼 행의 몇 %가 쓰레기인지가 문서에서 사라졌다"
-
     fixture = root / "tests" / "fixtures" / "mes_facts.json"
     facts = MesFacts.from_dict(json.loads(fixture.read_text(encoding="utf-8")))
     rows = build_readings(facts, *span(facts))
@@ -263,23 +243,143 @@ def test_the_documented_mis_join_damage_is_actually_measured():
     for spec in build_sensor_spec_rows():
         by_code[spec["sensor_code"]].append(spec)
 
-    # inner join 은 짝을 고르지 않는다. 전부 만든다.
+    return rows, by_code
+
+
+def _rejudge(value: float, spec: dict) -> str:
+    """그 스펙의 한계치로 다시 판정한다. classify 와 같은 규칙이다."""
+    if value < spec["alarm_min"] or value > spec["alarm_max"]:
+        return "Alarm"
+    if value < spec["normal_min"] or value > spec["normal_max"]:
+        return "Warning"
+    return "Normal"
+
+
+def test_joining_the_spec_on_code_alone_really_is_dangerous():
+    """경고가 실재하는 위험을 가리키는지 불변식으로 확인한다.
+
+    QMS 가 배수 자체보다 불변식을 주로 검사한다고 알려 왔다. 숫자는 픽스처를
+    다시 뜨면 흔들리지만, 경고할 이유가 남아 있는지는 그대로 물을 수 있다.
+
+    이 테스트가 실패하면 위험이 사라진 것이다. 그때는 데이터를 고칠 게
+    아니라 **문서의 경고를 지워야 한다.** 과잉 경고는 다른 경고까지
+    무디게 만든다.
+    """
+    rows, by_code = _joined_against_code_only()
+
     joined = sum(len(by_code[r["sensor_code"]]) for r in rows)
-    wrong = sum(
-        sum(1 for s in by_code[r["sensor_code"]] if s["eqp_type"] != r["eqp_type"])
+    pairs = [
+        (r, s)
         for r in rows
+        for s in by_code[r["sensor_code"]]
+        if s["eqp_type"] != r["eqp_type"]
+    ]
+
+    assert joined > len(rows) * 2, (
+        "코드만으로 조인해도 행이 거의 안 늘어난다."
+        " 부풀림 경고가 근거를 잃었으니 문서에서 지워야 한다"
+    )
+    assert len(pairs) / joined > 0.5, (
+        "틀린 짝이 절반도 안 된다. 경고 수위를 낮춰야 한다"
     )
 
-    actual_inflation = joined / len(rows)
-    actual_garbage = wrong / joined * 100
-
-    assert abs(actual_inflation - float(inflation.group(1))) <= 0.5, (
-        f"문서는 {inflation.group(1)}배라는데 실제로는 {actual_inflation:.2f}배다"
-    )
-    assert abs(actual_garbage - float(garbage.group(1))) <= 5.0, (
-        f"문서는 {garbage.group(1)}% 라는데 실제로는 {actual_garbage:.1f}% 다"
+    flipped = [(r, s) for r, s in pairs if _rejudge(r["value"], s) != r["status"]]
+    assert flipped, (
+        "틀린 짝으로 다시 판정해도 결과가 안 바뀐다면 한계치가 사실상 같다는"
+        " 뜻이다. 그렇다면 복합키를 고집할 이유가 없다"
     )
 
-    assert actual_inflation > 1.0, (
-        "부풀림이 사라졌다면 복합키 경고가 과잉이다. 문서를 지워야 한다"
+    # 단위가 다르면 알아챌 단서가 있다. 같으면 없다.
+    blind = [(r, s) for r, s in flipped if s["unit"] == r["unit"]]
+    assert len(blind) / len(flipped) > 0.5, (
+        "뒤집힌 판정 대부분이 단위 차이를 동반한다면 참가자가 알아챌 수 있다."
+        " 문서에서 '단위가 같아 더 안 보인다'는 서술을 조정해야 한다"
+    )
+
+
+def test_the_documented_mis_join_damage_is_actually_measured():
+    """문서가 인용한 숫자가 실제 데이터와 맞아야 한다.
+
+    QMS 가 `assert len(results) == 10` 처럼 개수만 세는 검사의 함정을 알려
+    왔다. 문자열이 문서에 있는지만 보면 숫자가 낡아도 통과한다. 참가자는
+    낡은 숫자로 위험을 잰다.
+
+    이 검사를 만들자마자 문서가 틀린 것이 드러났다. 처음엔 "판독값의 40.8%
+    가 다른 유형의 한계치에 붙는다"고 적었는데, 그건 스펙에서 코드마다 한
+    행만 고른다고 가정한 값이었다. `inner join` 은 고르지 않고 **모든 짝을
+    만든다.** 실제로는 결과가 3.6배로 부풀고 그중 72%가 쓰레기다.
+
+    정확한 값을 못 박지는 않는다. 앵커를 고정해 재배포하면 픽스처를 다시
+    뜨고 그때 설비 구성이 조금 달라진다. 크게 어긋날 때만 잡는다. 위험이
+    실재하는지 자체는 위 불변식 테스트가 본다.
+    """
+    doc = _doc()
+    inflation = re.search(r"결과가 (\d+(?:\.\d+)?)배로 부풀", doc)
+    garbage = re.search(r"그중 (\d+(?:\.\d+)?)%\s*가 엉뚱한", doc)
+    flip = re.search(r"(\d+(?:\.\d+)?)%\s*에서 판정이\s*\n?뒤집힙니다", doc)
+    blind = re.search(r"뒤집힌 판정의\s*\n?(\d+(?:\.\d+)?)%\s*가 이렇게 단위가 같은", doc)
+
+    assert inflation, "조인을 틀렸을 때 행이 부푼다는 사실이 문서에서 사라졌다"
+    assert garbage, "부푼 행의 몇 %가 쓰레기인지가 문서에서 사라졌다"
+    assert flip, "판정이 뒤집힌다는 사실이 문서에서 사라졌다"
+    assert blind, "뒤집힘 대부분이 단위가 같아 안 보인다는 안내가 사라졌다"
+
+    rows, by_code = _joined_against_code_only()
+    joined = sum(len(by_code[r["sensor_code"]]) for r in rows)
+    pairs = [
+        (r, s)
+        for r in rows
+        for s in by_code[r["sensor_code"]]
+        if s["eqp_type"] != r["eqp_type"]
+    ]
+    flipped = [(r, s) for r, s in pairs if _rejudge(r["value"], s) != r["status"]]
+    same_unit = [(r, s) for r, s in flipped if s["unit"] == r["unit"]]
+
+    for label, actual, quoted, tol in (
+        ("부풀림 배수", joined / len(rows), float(inflation.group(1)), 0.5),
+        ("오짝 비율", len(pairs) / joined * 100, float(garbage.group(1)), 5.0),
+        ("판정 뒤집힘", len(flipped) / len(pairs) * 100, float(flip.group(1)), 5.0),
+        ("단위 같은 비율", len(same_unit) / len(flipped) * 100, float(blind.group(1)), 5.0),
+    ):
+        assert abs(actual - quoted) <= tol, (
+            f"{label}: 문서는 {quoted} 인데 실제로는 {actual:.1f} 다."
+            " 참가자가 낡은 숫자로 위험을 잰다."
+        )
+
+
+def test_the_doc_tells_the_agent_the_verdict_is_already_in_the_row():
+    """판정에 조인이 필요 없다는 사실을 알려야 한다.
+
+    QMS 가 같은 자리에서 경고 대신 조인을 없애는 쪽을 골랐다고 알려 왔다.
+    계측 행이 규격을 복제해 두고 있어 애초에 조인할 이유가 없었다는
+    것이다. 여기도 같다. `status` 가 그 설비 유형의 한계치로 이미 계산돼
+    있고 `unit` 도 판독 행에 있다.
+
+    경고만 적어 두면 "조심해서 조인"하게 된다. 조인할 이유가 없다는 걸
+    알려주는 편이 낫다. 밟지 않은 지뢰는 터지지 않는다.
+
+    복제한 값이 스펙과 어긋나면 이 안내가 근거를 잃으므로 함께 확인한다.
+    """
+    doc = _doc()
+
+    assert re.search(r"판정에는 조인이 필요 없습니다", doc), (
+        "status 가 이미 계산돼 있다는 안내가 사라졌다."
+        " 그러면 참가자가 굳이 스펙과 조인해 직접 판정하고, 복합키를 놓치면"
+        " 9% 에서 틀린 답을 얻는다"
+    )
+
+    rows, by_code = _joined_against_code_only()
+
+    # 판독 행의 status 와 unit 이 자기 설비 유형 스펙과 일치해야 안내가 성립한다.
+    mismatched = 0
+    for row in rows:
+        own = next(
+            s for s in by_code[row["sensor_code"]] if s["eqp_type"] == row["eqp_type"]
+        )
+        if own["unit"] != row["unit"] or _rejudge(row["value"], own) != row["status"]:
+            mismatched += 1
+
+    assert mismatched == 0, (
+        f"판독 {mismatched} 행의 status/unit 이 자기 스펙과 다르다."
+        " 그렇다면 '조인이 필요 없다'는 안내가 거짓이 된다"
     )
