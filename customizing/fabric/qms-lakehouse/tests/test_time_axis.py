@@ -13,6 +13,8 @@ import copy
 import datetime as dt
 import math
 import os
+import random
+import statistics
 import time
 from collections import Counter
 
@@ -60,11 +62,18 @@ def _coincidence_limit(count: int, slots: int) -> int:
 
     자리마다 평균 count/slots 건이 떨어지는 포아송으로 본다. 자리가 slots 개
     이므로 어딘가에서 k 건 이상이 겹칠 확률은 slots * P(X >= k) 로 어림한다.
-    그 값이 1% 아래로 떨어지는 첫 k 를 한계로 삼는다. 검사 건수나 구간 폭이
-    달라지면 한계도 따라 움직이므로 숫자를 박아 두는 것보다 오래 간다.
+    그 값이 1% 아래로 떨어지는 첫 k 를 한계로 삼는다.
 
     하한은 3이다. 두 건이 겹치는 것은 실제로 일어난다 — 앵커를 13시간 옮기면
     PCS 36건에서 바로 나온다. 한계가 2면 그 우연에 깨진다.
+
+    **지금 규모에서는 다섯 유형 중 IPQC 만 포아송이 4를 내고 나머지 넷은
+    하한 3 이 결정한다.** 예산을 100배 느슨하게 해도 넷은 3 그대로다. 그래서
+    "검사 건수가 바뀌면 한계가 따라 움직인다" 는 IPQC 에만 해당한다. 포아송을
+    두는 이유는 데이터가 커질 때를 위해서다 — IPQC 가 이미 그 구간에 있다.
+
+    반대로 하한을 빼면 IPQC-RT 와 EQV 가 2 로 내려가 우연한 충돌에 깨진다.
+    둘 다 필요하고, 지금은 하한이 주로 일한다.
     """
     lam = count / slots
     for k in range(3, count + 1):
@@ -385,8 +394,9 @@ def test_inspections_do_not_pile_on_a_single_moment(snapshot, delta):
     IPQC 와 IPQC-RT 5건이 앵커 시각에 쌓여 있는 것을 3라운드 동안 놓쳤다.
 
     우연한 충돌과 뭉침은 규모가 다르다. 우연은 한 시각에 2건이고, 자르기는
-    34건을 한 시각에 쌓는다. 한계치는 포아송 근사로 유도하므로 검사 건수나
-    구간 폭이 바뀌어도 따라 움직인다.
+    34건을 한 시각에 쌓는다. 그 사이를 가른다. 한계치는 다섯 유형 중 넷이
+    하한 3 이고 IPQC 만 포아송이 4 를 낸다 — 자세한 것은 `_coincidence_limit`
+    주석에 적었다.
     """
     rows = build_all_tables(shifted_snapshot(snapshot, delta))["qms_inspection"]
     for kind in ("IPQC", "IPQC-RT", "OQC", "PCS", "EQV"):
@@ -438,18 +448,72 @@ def test_no_inspection_is_clamped_onto_the_anchor(snapshot, delta):
         )
 
 
-def test_the_coincidence_limit_separates_luck_from_clamping(snapshot):
+@pytest.mark.parametrize(
+    "delta",
+    [dt.timedelta(0), dt.timedelta(hours=13), dt.timedelta(hours=37), SHIFT],
+    ids=["원본", "13시간", "37시간", "27일"],
+)
+def test_the_coincidence_limit_separates_luck_from_clamping(snapshot, delta):
     """한계치가 우연은 통과시키고 자르기는 잡는 자리에 있어야 한다.
 
     한계치가 너무 높으면 뭉침을 놓치고, 너무 낮으면 우연한 충돌에 깨진다.
     실측한 두 규모 사이에 있는지 확인한다. 이것이 무너지면 위 테스트의
     한계치 유도를 다시 봐야 한다.
+
+    `_coincidence_limit` 은 수렴에 실패하면 count 를 돌려준다. 그러면 어떤
+    뭉침도 통과하므로 그물이 사라지는데, 테스트는 조용히 통과한다. FDC 가
+    같은 자리에서 한계가 전부 루프 상한(1000)으로 나오는 것을 겪었다 —
+    꼬리 확률을 `1 - term` 이 아니라 `term` 으로 시작해 아무리 빼도 예산
+    아래로 안 내려갔다. 통과를 보고 넘어갈 뻔했다고 한다. 수렴 실패를
+    결함으로 세운다.
+
+    앵커를 함께 옮긴다. 원본 하나만 보는 것이 바로 위 테스트가 3라운드 동안
+    뭉침을 놓친 이유였는데, 그것을 고치면서 같은 결함을 이 테스트에 다시
+    넣었다.
     """
-    rows = build_all_tables(snapshot)["qms_inspection"]
+    rows = build_all_tables(shifted_snapshot(snapshot, delta))["qms_inspection"]
     for kind in ("IPQC", "IPQC-RT", "OQC", "PCS", "EQV"):
         values = [r["inspection_datetime"] for r in rows if r["inspection_type"] == kind]
         limit = _coincidence_limit(len(values), _minute_slots(values))
+        assert limit < len(values), f"{kind} 한계 {limit} 이 수렴에 실패했습니다"
         assert 3 <= limit < len(values) / 2, f"{kind} 한계 {limit} 이 규모를 못 가릅니다"
+
+
+def test_the_coincidence_model_is_not_optimistic(snapshot):
+    """포아송 근사가 실제 분포보다 충돌을 적게 예측하면 안 된다.
+
+    모델이 실제보다 낙관적이면 한계가 낮아져 정상 데이터에 깨진다. 균등
+    분포로 시뮬레이션해 모델의 예측이 실측보다 작지 않은지 본다.
+
+    표준오차로 재는 이유는 시뮬레이션 자체가 흔들리기 때문이다. 처음에
+    `expected >= observed` 로 썼더니 2.090 대 2.114 로 실패했는데, 차이가
+    1 표준오차 안이라 결함이 아니라 표본 노이즈였다. 다섯 유형 전부
+    -0.74 ~ 0.95 표준오차 안에 있다.
+
+    FDC 가 같은 자리에서 기대값 모델이 2,095배 어긋난 것을 찾았다. 환경
+    성분이 정상 범위의 60% 를 이미 먹고 있는데 그것을 빼고 여유를 셌기
+    때문이었다. 그 정도 어긋남은 여기서 77 표준오차로 잡힌다. 모델은 세워
+    두기만 하면 검증되지 않으므로 직접 잰다.
+    """
+    trials = 3000
+    tolerance = 3.0
+    rng = random.Random(7)
+    rows = build_all_tables(snapshot)["qms_inspection"]
+    for kind in ("IPQC", "IPQC-RT", "OQC", "PCS", "EQV"):
+        values = [r["inspection_datetime"] for r in rows if r["inspection_type"] == kind]
+        count, slots = len(values), _minute_slots(values)
+        mean = count / slots
+        expected = slots * (1.0 - math.exp(-mean) * (1.0 + mean))
+        samples = [
+            sum(1 for n in Counter(rng.randrange(slots) for _ in range(count)).values() if n >= 2)
+            for _ in range(trials)
+        ]
+        observed = statistics.mean(samples)
+        error = statistics.stdev(samples) / math.sqrt(trials)
+        assert observed - expected <= tolerance * error, (
+            f"{kind} 모델이 {expected:.3f} 를 예측했는데 실제로는 {observed:.3f} 입니다"
+            f" ({(observed - expected) / error:.1f} 표준오차)"
+        )
 
 
 # --- 타임존 통일 -------------------------------------------------------------
