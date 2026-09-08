@@ -10,11 +10,10 @@ from __future__ import annotations
 import datetime as dt
 import random
 
-from src.mes_client import MesSnapshot
+from src.mes_client import MesSnapshot, anchor_date
 from src.qms_inspection import mes_result_index
 from src.qms_reference import (
     APPROVER_NAMES,
-    BASE_DATE,
     OWNER_DEPTS,
     OWNER_NAMES,
     SEED_NCR,
@@ -74,6 +73,7 @@ def build_nonconformances(
     incoming: list[dict],
     defect_codes: list[dict],
 ) -> tuple[list[dict], list[dict]]:
+    base_date = anchor_date(snapshot)
     rng = random.Random(SEED_NCR)
     mes = mes_result_index(snapshot)
     defect_by_code = {d["defect_code"]: d for d in defect_codes}
@@ -103,7 +103,9 @@ def build_nonconformances(
                 rng, ncr_id, iqc_by_id[seed[1]], defect_by_code, lots, step_names, devices
             )
         else:
-            ncr = _ncr_from_complaint(rng, ncr_id, products[position % len(products)], defect_codes)
+            ncr = _ncr_from_complaint(
+                rng, ncr_id, products[position % len(products)], defect_codes, base_date
+            )
         disposition = _disposition_for(
             rng, f"DSP-2026-{position + 1:04d}", ncr, devices, step_names
         )
@@ -276,9 +278,9 @@ def _ncr_from_iqc(rng, ncr_id, iqc, defect_by_code, lots, step_names, devices) -
     return ncr
 
 
-def _ncr_from_complaint(rng, ncr_id, product, defect_codes) -> dict:
+def _ncr_from_complaint(rng, ncr_id, product, defect_codes, base_date) -> dict:
     defect = rng.choice(defect_codes)
-    detected = BASE_DATE + dt.timedelta(days=rng.randint(3, 10))
+    detected = base_date + dt.timedelta(days=rng.randint(3, 10))
     ncr = _base_ncr(rng, ncr_id, "고객제기", defect, detected)
     ncr["product_code"] = product["product_code"]
     ncr["product_name"] = product["product_name"]

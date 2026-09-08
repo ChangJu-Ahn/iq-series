@@ -5,7 +5,7 @@ from src.qms_masters import build_defect_codes, build_inspectors
 
 
 def incoming(snapshot):
-    return build_incoming_inspections(snapshot, build_inspectors(), build_defect_codes())
+    return build_incoming_inspections(snapshot, build_inspectors(snapshot), build_defect_codes())
 
 
 def test_total_is_200_with_unique_ids(snapshot):
@@ -58,7 +58,7 @@ def test_missing_certificate_is_reported_as_not_submitted(snapshot):
 
 
 def test_incoming_inspections_are_handled_by_the_receiving_team(snapshot):
-    receiving = {i["inspector_id"] for i in build_inspectors() if i["team_ko"] == "입고검사팀"}
+    receiving = {i["inspector_id"] for i in build_inspectors(snapshot) if i["team_ko"] == "입고검사팀"}
     assert {r["inspector_id"] for r in incoming(snapshot)} <= receiving
 
 

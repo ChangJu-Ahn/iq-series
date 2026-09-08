@@ -9,9 +9,9 @@ from __future__ import annotations
 import datetime as dt
 import random
 
-from src.mes_client import MesSnapshot
+from src.mes_client import MesSnapshot, anchor_date
 from src.qms_masters import defect_codes_by_mes
-from src.qms_reference import BASE_DATE, INSPECTION_ITEMS, SEED_INCOMING, SUPPLIERS
+from src.qms_reference import INSPECTION_ITEMS, SEED_INCOMING, SUPPLIERS
 
 IQC_JUDGMENT_COUNTS = {"불합격": 24, "특채": 16, "합격": 160}
 
@@ -53,6 +53,7 @@ _REMARKS = {
 def build_incoming_inspections(
     snapshot: MesSnapshot, inspectors: list[dict], defect_codes: list[dict]
 ) -> list[dict]:
+    base_date = anchor_date(snapshot)
     rng = random.Random(SEED_INCOMING)
     suppliers = dict(SUPPLIERS)
     receiving = [i for i in inspectors if i["team_ko"] == "입고검사팀"]
@@ -79,7 +80,7 @@ def build_incoming_inspections(
         low, high = _RECEIPT_QTY[material["uom"]]
         received_qty = float(rng.randint(low, high))
         sample_size = min(rng.randint(3, 20), int(received_qty))
-        receipt_date = BASE_DATE - dt.timedelta(days=rng.randint(0, 30))
+        receipt_date = base_date - dt.timedelta(days=rng.randint(0, 30))
         coa_received = rng.random() >= 0.10
         if not coa_received:
             coa_conformance = "미제출"

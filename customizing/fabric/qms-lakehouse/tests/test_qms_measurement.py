@@ -11,7 +11,7 @@ from src.qms_measurement import (
 
 
 def measurements(snapshot):
-    inspections = build_inspections(snapshot, build_inspectors())
+    inspections = build_inspections(snapshot, build_inspectors(snapshot))
     return inspections, build_measurements(inspections, build_inspection_specs(snapshot))
 
 

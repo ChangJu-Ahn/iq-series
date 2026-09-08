@@ -53,8 +53,8 @@ def test_specs_carry_mes_labels(snapshot):
     assert index[("DDR5", "PHOTO", "CD")]["product_name"] == "DDR5-16G"
 
 
-def test_inspectors_are_five_teams_by_three_shifts():
-    rows = build_inspectors()
+def test_inspectors_are_five_teams_by_three_shifts(snapshot):
+    rows = build_inspectors(snapshot)
     assert len(rows) == 15
     assert len({r["inspector_id"] for r in rows}) == 15
     assert len({r["team_ko"] for r in rows}) == 5
@@ -64,12 +64,12 @@ def test_inspectors_are_five_teams_by_three_shifts():
 
 def test_inspector_names_do_not_collide_with_mes_operators(snapshot):
     mes_operators = {r.get("operator") for r in snapshot.process_results}
-    names = {r["inspector_name"] for r in build_inspectors()}
+    names = {r["inspector_name"] for r in build_inspectors(snapshot)}
     assert not (names & mes_operators)
     assert len(names) == 15
 
 
 def test_masters_are_deterministic(snapshot):
     assert build_defect_codes() == build_defect_codes()
-    assert build_inspectors() == build_inspectors()
+    assert build_inspectors(snapshot) == build_inspectors(snapshot)
     assert build_inspection_specs(snapshot) == build_inspection_specs(snapshot)

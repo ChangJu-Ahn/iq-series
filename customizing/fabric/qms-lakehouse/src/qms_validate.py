@@ -9,7 +9,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-from src.mes_client import MesSnapshot
+from src.mes_client import MesSnapshot, parse_mes_time
 
 TABLE_ROW_TARGETS = {
     "qms_defect_code": 24,
@@ -51,6 +51,7 @@ def validate(snapshot: MesSnapshot, tables: dict[str, list[dict]]) -> list[Valid
         _check_orphan_keys(snapshot, tables),
         _check_forbidden_columns(tables),
         _check_internal_references(tables),
+        _check_timestamp_timezones(tables),
         _check_time_causality(snapshot, tables),
         _check_quantities(tables),
         _check_measurement_limits(tables),
@@ -143,17 +144,44 @@ def _check_internal_references(tables) -> ValidationResult:
     return _result("내부 FK", problems, "내부 참조 전건 유효", fatal=True)
 
 
+def _check_timestamp_timezones(tables) -> ValidationResult:
+    """모든 시각 값이 tz-aware 인지 본다.
+
+    PySpark 는 tz-aware 면 calendar.timegm 을, naive 면 time.mktime(로컬 타임존)을
+    탄다. 한 컬럼에 둘이 섞이면 드라이버가 UTC 가 아닌 곳에서 일부 행만 밀리는데,
+    적재는 성공하고 값만 틀리므로 눈으로는 찾을 수 없다. 그래서 치명 항목이다.
+    dt.date 는 dt.datetime 의 인스턴스가 아니므로 날짜 컬럼은 걸리지 않는다.
+    """
+    naive: dict[str, int] = {}
+    for name, rows in tables.items():
+        for row in rows:
+            for column, value in row.items():
+                if isinstance(value, dt.datetime) and value.tzinfo is None:
+                    key = f"{name}.{column}"
+                    naive[key] = naive.get(key, 0) + 1
+    problems = [f"{key} naive {count}건" for key, count in sorted(naive.items())]
+    return _result("타임존 통일", problems, "모든 시각이 tz-aware UTC", fatal=True)
+
+
 def _check_time_causality(snapshot, tables) -> ValidationResult:
-    out_time = {r["id"]: dt.datetime.fromisoformat(r["out_time"]) for r in snapshot.process_results}
+    out_time = {r["id"]: parse_mes_time(r["out_time"]) for r in snapshot.process_results}
     inspection_by_id = {r["inspection_id"]: r for r in tables["qms_inspection"]}
     ncr_by_id = {r["ncr_id"]: r for r in tables["qms_nonconformance"]}
     problems = []
 
+    # QMS 시각이 MES 구간에서 떨어져 나가지 않았는지 본다. 벽시계 상수가 다시
+    # 들어오면 MES 재배포 때 여기부터 어긋나므로, 창을 앵커 기준으로 잡는다.
+    window_start = min(out_time.values())
+    window_end = max(out_time.values()) + dt.timedelta(days=4)
+
     for row in tables["qms_inspection"]:
         mes_id = row["mes_process_result_id"]
         mes_out = out_time.get(mes_id) if mes_id is not None else None
-        if mes_out is not None and row["inspection_datetime"] < mes_out:
+        when = row["inspection_datetime"]
+        if mes_out is not None and when < mes_out:
             problems.append(f"{row['inspection_id']} 검사시각이 MES 종료시각보다 이르다")
+        if not window_start <= when <= window_end:
+            problems.append(f"{row['inspection_id']} 검사시각이 MES 구간 밖이다 ({when})")
     for row in tables["qms_nonconformance"]:
         inspection = inspection_by_id.get(row["inspection_id"])
         if inspection and row["detected_date"] < inspection["inspection_datetime"].date():

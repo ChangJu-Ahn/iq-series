@@ -85,7 +85,7 @@ TABLE_COLUMNS = {name: ddl_columns(ddl) for name, ddl in TABLE_DDL.items()}
 
 def build_all_tables(snapshot: MesSnapshot) -> dict[str, list[dict]]:
     """8개 테이블 전체를 만든다. 노트북과 테스트가 공유하는 단일 진입점이다."""
-    inspectors = build_inspectors()
+    inspectors = build_inspectors(snapshot)
     defect_codes = build_defect_codes()
     specs = build_inspection_specs(snapshot)
     inspections = build_inspections(snapshot, inspectors)

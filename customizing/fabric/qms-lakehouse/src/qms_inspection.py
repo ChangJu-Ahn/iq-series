@@ -13,7 +13,7 @@ from __future__ import annotations
 import datetime as dt
 import random
 
-from src.mes_client import MesSnapshot
+from src.mes_client import MesSnapshot, anchor_date, parse_mes_time
 from src.qms_reference import SEED_INSPECTION
 
 INSPECTION_COUNTS = {"IPQC": 91, "IPQC-RT": 40, "OQC": 24, "PCS": 36, "EQV": 16}
@@ -37,8 +37,20 @@ def mes_result_index(snapshot: MesSnapshot) -> dict[int, dict]:
     return {row["id"]: row for row in snapshot.process_results}
 
 
-def _parse(ts: str) -> dt.datetime:
-    return dt.datetime.fromisoformat(ts)
+def _shift_start(base_date: dt.date, days_after: int, hour: int) -> dt.datetime:
+    """앵커 날짜에서 며칠 뒤 근무조 시작 시각. 항상 tz-aware UTC 다.
+
+    출하검사(OQC)·공정능력조사(PCS)·설비적격성(EQV)은 특정 MES 공정이력에서
+    파생되지 않고 "생산이 끝난 뒤 근무조에 한다"는 도메인 규칙을 따른다.
+    그 규칙을 벽시계 날짜가 아니라 앵커 날짜 기준으로 표현한다.
+
+    경계: 앵커가 그 날짜의 23:59:59 일 때 간격이 가장 좁다. 그때도 가장 이른
+    항목인 OQC 가 다음 날 08:00 이라 8시간이 남는다. 어떤 앵커에서도 이 검사들이
+    생산보다 앞서지 않으므로 .date() 를 써도 인과가 뒤집히지 않는다.
+    """
+    return dt.datetime.combine(
+        base_date + dt.timedelta(days=days_after), dt.time(hour), tzinfo=dt.timezone.utc
+    )
 
 
 def _bounded(rng: random.Random, low: int, high: int, cap: int) -> int:
@@ -64,6 +76,7 @@ class _IdGen:
 
 
 def build_inspections(snapshot: MesSnapshot, inspectors: list[dict]) -> list[dict]:
+    base_date = anchor_date(snapshot)
     rng = random.Random(SEED_INSPECTION)
     ids = _IdGen()
     by_team: dict[str, list[dict]] = {}
@@ -76,9 +89,9 @@ def build_inspections(snapshot: MesSnapshot, inspectors: list[dict]) -> list[dic
     rows: list[dict] = []
     rows.extend(_build_ipqc(rng, ids, results, lots, by_team))
     rows.extend(_build_retest(rng, ids, results, lots, by_team))
-    rows.extend(_build_oqc(rng, ids, snapshot, by_team))
-    rows.extend(_build_pcs(rng, ids, snapshot, by_team))
-    rows.extend(_build_eqv(rng, ids, snapshot, by_team))
+    rows.extend(_build_oqc(rng, ids, snapshot, by_team, base_date))
+    rows.extend(_build_pcs(rng, ids, snapshot, by_team, base_date))
+    rows.extend(_build_eqv(rng, ids, snapshot, by_team, base_date))
     return rows
 
 
@@ -194,7 +207,7 @@ def _build_ipqc(rng, ids, results, lots, by_team) -> list[dict]:
                 eqp_id=mes["eqp_id"],
                 mes_id=mes["id"],
                 inspector=rng.choice(by_team[_TEAM_BY_TYPE["IPQC"]]),
-                when=_parse(mes["out_time"]) + dt.timedelta(minutes=rng.randint(10, 240)),
+                when=parse_mes_time(mes["out_time"]) + dt.timedelta(minutes=rng.randint(10, 240)),
                 wafers=wafers,
                 sample_size=sample_size,
                 judgment=judgment,
@@ -243,7 +256,7 @@ def _build_retest(rng, ids, results, lots, by_team) -> list[dict]:
                 eqp_id=mes["eqp_id"],
                 mes_id=mes["id"],
                 inspector=rng.choice(by_team[_TEAM_BY_TYPE["IPQC-RT"]]),
-                when=_parse(mes["out_time"]) + dt.timedelta(minutes=rng.randint(300, 720)),
+                when=parse_mes_time(mes["out_time"]) + dt.timedelta(minutes=rng.randint(300, 720)),
                 wafers=wafers,
                 sample_size=sample_size,
                 judgment=judgment,
@@ -256,7 +269,7 @@ def _build_retest(rng, ids, results, lots, by_team) -> list[dict]:
     return rows
 
 
-def _build_oqc(rng, ids, snapshot, by_team) -> list[dict]:
+def _build_oqc(rng, ids, snapshot, by_team, base_date) -> list[dict]:
     """Done 로트 6건을 출하 배치 4개로 나눠 24건."""
     done = sorted((l for l in snapshot.lots if l["status"] == "Done"), key=lambda l: l["lot_id"])
     step_names = {s["step_code"]: s["step_name"] for s in snapshot.route}
@@ -289,7 +302,7 @@ def _build_oqc(rng, ids, snapshot, by_team) -> list[dict]:
                 eqp_id=None,
                 mes_id=None,
                 inspector=rng.choice(by_team[_TEAM_BY_TYPE["OQC"]]),
-                when=dt.datetime(2026, 9, 5, 8, 0) + dt.timedelta(minutes=rng.randint(0, 600)),
+                when=_shift_start(base_date, 1, 8) + dt.timedelta(minutes=rng.randint(0, 600)),
                 wafers=wafers,
                 sample_size=sample_size,
                 judgment=judgment,
@@ -302,7 +315,7 @@ def _build_oqc(rng, ids, snapshot, by_team) -> list[dict]:
     return rows
 
 
-def _build_pcs(rng, ids, snapshot, by_team) -> list[dict]:
+def _build_pcs(rng, ids, snapshot, by_team, base_date) -> list[dict]:
     """제품 4 × 공정 9 = 36건 정기 공정능력 조사. 로트에 매이지 않는다."""
     products = sorted(snapshot.products, key=lambda p: p["product_code"])
     steps = sorted(snapshot.route, key=lambda s: s["seq"])
@@ -326,7 +339,7 @@ def _build_pcs(rng, ids, snapshot, by_team) -> list[dict]:
                 eqp_id=None,
                 mes_id=None,
                 inspector=rng.choice(by_team[_TEAM_BY_TYPE["PCS"]]),
-                when=dt.datetime(2026, 9, 5, 9, 0) + dt.timedelta(minutes=rng.randint(0, 1440)),
+                when=_shift_start(base_date, 1, 9) + dt.timedelta(minutes=rng.randint(0, 1440)),
                 wafers=3,
                 sample_size=9,
                 judgment=judgment,
@@ -341,7 +354,7 @@ def _build_pcs(rng, ids, snapshot, by_team) -> list[dict]:
     return rows
 
 
-def _build_eqv(rng, ids, snapshot, by_team) -> list[dict]:
+def _build_eqv(rng, ids, snapshot, by_team, base_date) -> list[dict]:
     """설비 8대 × 2회 = 16건 설비 검증. 제품과 로트 모두 무관하다."""
     step_names = {s["step_code"]: s["step_name"] for s in snapshot.route}
     slots = [(e, run) for e in snapshot.equipment for run in (1, 2)]
@@ -364,7 +377,7 @@ def _build_eqv(rng, ids, snapshot, by_team) -> list[dict]:
                 eqp_id=equipment["eqp_id"],
                 mes_id=None,
                 inspector=rng.choice(by_team[_TEAM_BY_TYPE["EQV"]]),
-                when=dt.datetime(2026, 9, 6, 7, 0) + dt.timedelta(minutes=rng.randint(0, 1440)),
+                when=_shift_start(base_date, 2, 7) + dt.timedelta(minutes=rng.randint(0, 1440)),
                 wafers=2,
                 sample_size=6,
                 judgment=judgment,

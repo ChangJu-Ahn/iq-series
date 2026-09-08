@@ -7,7 +7,7 @@ from src.qms_nonconformance import NCR_SOURCE_COUNTS, build_nonconformances
 
 
 def build_ncr_bundle(snapshot):
-    inspectors = build_inspectors()
+    inspectors = build_inspectors(snapshot)
     defect_codes = build_defect_codes()
     inspections = build_inspections(snapshot, inspectors)
     incoming = build_incoming_inspections(snapshot, inspectors, defect_codes)

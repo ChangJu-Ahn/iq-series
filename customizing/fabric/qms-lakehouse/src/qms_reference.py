@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import datetime as dt
 
-BASE_DATE = dt.date(2026, 9, 4)
+# 기준일 상수를 두지 않는다. QMS 의 모든 시각은 MES 앵커에서 유도되며
+# mes_client.anchor_date(snapshot) 가 그 역할을 한다. 벽시계 상수를 여기 두면
+# MES 재배포 때 QMS 만 제자리에 남는다.
 
 # 모듈마다 독립 시드를 둔다. 한 모듈의 난수 소비량이 바뀌어도
 # 다른 모듈의 출력이 흔들리지 않게 하기 위함이다.

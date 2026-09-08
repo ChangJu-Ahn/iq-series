@@ -5,9 +5,8 @@ from __future__ import annotations
 import datetime as dt
 import random
 
-from src.mes_client import MesSnapshot
+from src.mes_client import MesSnapshot, anchor_date
 from src.qms_reference import (
-    BASE_DATE,
     CHARACTERISTIC_BASE,
     CONTROL_METHODS,
     DEFECT_DETAILS,
@@ -59,6 +58,7 @@ def defect_codes_by_mes(defect_codes: list[dict]) -> dict[str, list[dict]]:
 
 def build_inspection_specs(snapshot: MesSnapshot) -> list[dict]:
     """제품 4 × 공정 9 × 특성 3 = 108행. 규격은 제품 노드에 따라 조정된다."""
+    base_date = anchor_date(snapshot)
     product_names = {p["product_code"]: p["product_name"] for p in snapshot.products}
     step_names = {s["step_code"]: s["step_name"] for s in snapshot.route}
     rows = []
@@ -91,7 +91,7 @@ def build_inspection_specs(snapshot: MesSnapshot) -> list[dict]:
                         "inspection_frequency": INSPECTION_FREQUENCIES[char_code],
                         "control_method_ko": CONTROL_METHODS[meas_type],
                         "spec_version": "v1.2",
-                        "effective_from": BASE_DATE - dt.timedelta(days=180),
+                        "effective_from": base_date - dt.timedelta(days=180),
                         "is_active": True,
                     }
                 )
@@ -102,15 +102,16 @@ def spec_index(specs: list[dict]) -> dict[tuple[str, str, str], dict]:
     return {(s["product_code"], s["step_code"], s["characteristic_code"]): s for s in specs}
 
 
-def build_inspectors() -> list[dict]:
+def build_inspectors(snapshot: MesSnapshot) -> list[dict]:
     """팀 5 × 교대 3 = 15명."""
+    base_date = anchor_date(snapshot)
     rng = random.Random(SEED_MASTERS)
     rows = []
     for team_no, (team_ko, certified) in enumerate(INSPECTOR_TEAMS):
         for shift_no, shift in enumerate(_SHIFTS):
             index = team_no * len(_SHIFTS) + shift_no
             years = rng.randint(1, 6)
-            certified_from = BASE_DATE - dt.timedelta(days=365 * years + rng.randint(0, 300))
+            certified_from = base_date - dt.timedelta(days=365 * years + rng.randint(0, 300))
             rows.append(
                 {
                     "inspector_id": f"QI-{index + 1:03d}",

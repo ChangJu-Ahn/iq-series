@@ -7,6 +7,7 @@ REST(/api)와 MCP(/mcp) 두 채널을 하나의 MesSnapshot으로 모은다.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import urllib.error
 import urllib.request
@@ -92,6 +93,37 @@ class MesSnapshot:
     @classmethod
     def from_dict(cls, payload: dict) -> "MesSnapshot":
         return cls(**{name: payload[name] for name in _SNAPSHOT_FIELDS})
+
+
+def parse_mes_time(value: str) -> dt.datetime:
+    """MES 시각 문자열을 tz-aware UTC 로 읽는다.
+
+    한 컬럼에 aware 와 naive 가 섞이면 PySpark 가 둘을 다르게 저장한다.
+    aware 는 calendar.timegm 을, naive 는 time.mktime(로컬 타임존)을 타므로
+    드라이버가 UTC 가 아닌 곳에서는 같은 컬럼의 일부만 밀린다. 적재는 성공하고
+    값만 틀리기 때문에 발견이 늦다. 그래서 입구에서 한 번에 통일한다.
+    """
+    parsed = dt.datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def mes_anchor(snapshot: MesSnapshot) -> dt.datetime:
+    """MES 공정이력의 마지막 종료 시각. 모든 QMS 시각의 기준점이다.
+
+    QMS 시각을 벽시계 상수로 두면 MES 를 재배포할 때 MES 만 움직이고 QMS 는
+    제자리에 남는다. MES 앵커가 Bicep 의 utcNow() 로 배포 시점에 평가되므로
+    이 어긋남은 재배포마다 반드시 일어난다. 그래서 기준점을 데이터에서 얻는다.
+    """
+    if not snapshot.process_results:
+        raise ValueError("공정이력이 비어 있어 QMS 시각의 기준점을 정할 수 없습니다.")
+    return max(parse_mes_time(row["out_time"]) for row in snapshot.process_results)
+
+
+def anchor_date(snapshot: MesSnapshot) -> dt.date:
+    """앵커의 UTC 날짜. 날짜 컬럼들의 기준일이다."""
+    return mes_anchor(snapshot).date()
 
 
 class MesApiKeyMissing(RuntimeError):

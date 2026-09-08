@@ -11,7 +11,7 @@ def test_strip_removes_single_and_multiline_local_imports():
         "import json\n"
         "from src.mes_client import MesSnapshot\n"
         "from src.qms_reference import (\n"
-        "    BASE_DATE,\n"
+        "    SEED_INSPECTION,\n"
         "    SEED_MASTERS,\n"
         ")\n"
         "VALUE = 1\n"

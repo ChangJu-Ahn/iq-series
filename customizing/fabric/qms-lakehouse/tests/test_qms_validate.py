@@ -12,9 +12,9 @@ from src.qms_validate import (
 )
 
 
-def test_all_eight_checks_pass_on_generated_data(snapshot, tables):
+def test_all_nine_checks_pass_on_generated_data(snapshot, tables):
     results = validate(snapshot, tables)
-    assert len(results) == 8
+    assert len(results) == 9
     failed = [r for r in results if not r.passed]
     assert not failed, format_report(results)
 

@@ -6,7 +6,7 @@ from src.qms_masters import build_inspectors
 
 
 def inspections(snapshot):
-    return build_inspections(snapshot, build_inspectors())
+    return build_inspections(snapshot, build_inspectors(snapshot))
 
 
 def test_total_is_207_with_the_designed_type_mix(snapshot):
