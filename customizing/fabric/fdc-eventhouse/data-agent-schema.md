@@ -20,8 +20,9 @@ Fabric Data Agent나 Foundry 에이전트에 이 Eventhouse를 붙일 때 지식
 |---|---|
 | 그 시각에 그 설비에 어떤 로트가 있었나 | MES `list_process_results` — **경보 시각을 함께 넘기세요** |
 | 그 로트는 어떤 제품인가 | MES `list_lots` |
-| 그 로트는 합격인가 | QMS `qms_inspection_result` |
+| 그 로트는 합격인가 | QMS `qms_inspection` 의 `judgment` |
 | 어떤 결함이 나왔나 | QMS `qms_nonconformance` |
+| 측정값이 규격 안이었나 | QMS `qms_measurement` + `qms_inspection_spec` |
 | 몇 장을 투입해 몇 장이 나왔나 | MES `process_results` 의 `in_qty`/`out_qty` |
 | 누가 작업했나 | MES `operator` |
 
@@ -40,7 +41,17 @@ FDC.eqp_id  ==  MES.process_results.eqp_id
 FDC.reading_ts  ∈  [MES.process_results.in_time, out_time)
 FDC.step_code  ==  MES.route.step_code  ==  QMS.step_code
 FDC.eqp_type  ==  MES.route.eqp_type
+
+MES.process_results.id  ==  QMS.qms_inspection.mes_process_result_id
 ```
+
+**MES에서 QMS로 건너갈 때는 `mes_process_result_id` 를 쓰세요.** FDC→MES는 `eqp_id`
+와 시각으로 좁히지만, MES→QMS는 그 런의 `id` 로 **직접** 이어집니다. `lot_id` 로만
+이으면 그 로트의 모든 공정 검사가 걸려서 어느 공정의 검사였는지 흐려집니다.
+
+다만 `mes_process_result_id` 가 `null` 인 검사도 있습니다. 출하 검사(OQC)·공정능력
+평가(PCS)·설비 검증(EQV)은 특정 런에 대응하지 않기 때문입니다. 그 검사들은 `lot_id`
+나 `eqp_id` 로만 이어집니다.
 
 **`eqp_id` 와 시각을 함께 써서 이으세요.** MES `process_results` 는 로트마다
 `in_time` / `out_time` 구간을 갖고, 같은 설비에서 구간이 겹치지 않습니다. FDC는
