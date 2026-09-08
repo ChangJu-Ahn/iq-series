@@ -1,16 +1,28 @@
 """돌연변이를 걸어 테스트가 실제로 잡는지 확인한다.
 
-돌연변이 테스트는 세 가지로 조용히 실패한다. 전부 겪었다.
+돌연변이 테스트는 여섯 가지로 조용히 실패한다. 전부 겪었다.
 
 1. **치환이 안 걸린다.** 원본 문자열이 안 맞으면 파일은 그대로인데 테스트는
    통과한다. 이걸 "테스트가 견뎠다"로 읽으면 없는 그물을 있다고 믿는다.
 2. **걸렸는데 값이 안 변한다.** `old == new` 인 실수. 1번과 결과가 같다.
 3. **코드가 깨진다.** `NameError` 로 45개가 실패하면 "잡혔다"로 보이지만
    불변식이 잡은 게 아니다. 크래시는 미적용과 같이 다뤄야 한다.
+4. **산출물을 다시 안 만든다.** 소스는 바뀌었는데 테스트가 옛 `.ipynb` 를
+   읽는다. 적용됐고 크래시도 아닌데 안 잡힌다.
+5. **복원한 뒤 산출물을 안 되돌린다.** 다음 돌연변이가 오염된 산출물을
+   읽고 엉뚱하게 실패한다. 잡힌 것처럼 보인다.
+6. **적용됐는데 지표가 안 움직인다.** 이탈 센서 선택을 5% 확률로 비틀었더니
+   불량 런 31개 중 2개만 걸렸고 그마저 다른 설비라 무지목 경보가 그대로였다.
+   앞의 다섯 가드를 전부 통과한다 — 문자열도 바뀌었고 크래시도 아니다.
+   테스트 결과를 읽기 전에 돌연변이가 의도한 일을 했는지부터 봐야 한다.
 
-3번은 QMS 세션이 알려 줬다. 앞의 둘은 문자열만 봐도 막지만 3번은 결과를
-읽어야 안다. 그래서 실패 이유가 `AssertionError` 인지 확인하고, 관심 지표를
-함께 출력해 값이 실제로 움직였는지 눈으로 본다.
+3번은 QMS 세션이 알려 줬다. 4·5·6번은 여기서 밟았다. 앞의 둘은 문자열만
+봐도 막지만 나머지는 결과를 읽어야 안다. 그래서 실패 이유가 `AssertionError`
+인지 확인하고, 관심 지표를 `값 (원래 N)` 형식으로 출력해 기준값과 대조한다.
+
+**돌아가는 동안 이 저장소의 파일을 건드리면 안 된다.** 대상 파일을 고쳤다
+되돌리는 사이라 `git status` 가 더럽게 보이고 `git checkout` 은 남의 작업을
+지운다. 실제로 그렇게 편집 하나를 통째로 날렸다.
 
     python3 mutants.py            # 전부
     python3 mutants.py anchor     # 그룹 하나
@@ -18,6 +30,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -48,6 +61,19 @@ class Result:
     detail: str = ""
     probe: str = ""
     reasons: list[str] = field(default_factory=list)
+
+
+def _probe_moved(probe: str) -> bool | None:
+    """probe 지표가 기준값에서 움직였는지. 대조할 수 없으면 None.
+
+    probe 는 `무지목 Alarm 0 (원래 0) · Warning 2 (원래 2)` 처럼 현재값
+    바로 뒤에 기준값을 적는다. 짝이 하나도 없으면 판정하지 않는다 —
+    기준값을 안 적은 probe 까지 무효로 몰면 그물이 성겨진다.
+    """
+    pairs = re.findall(r"(-?[\d,]+)\s*\(원래\s*(-?[\d,]+)\)", probe)
+    if not pairs:
+        return None
+    return any(got.replace(",", "") != want.replace(",", "") for got, want in pairs)
 
 
 def _run(mutant: Mutant) -> Result:
@@ -111,6 +137,15 @@ def _run(mutant: Mutant) -> Result:
             if line.startswith("E ") and ":" in line
         }
     )
+
+    # 여섯 번째 조용한 실패: 적용됐고 값도 바뀌었고 크래시도 아닌데 관심
+    # 지표가 하나도 안 움직인 경우. 이탈 센서 선택을 5% 확률로 비트는
+    # 돌연변이를 걸었더니 불량 런 31개 중 2개만 걸렸고 그마저 다른 설비라
+    # 지표가 그대로였다. 앞의 다섯 가드로는 전부 통과한다.
+    if _probe_moved(probe) is False:
+        return Result(
+            mutant.name, "무효", "지표가 하나도 안 움직였다 — 돌연변이가 닿지 않았다", probe
+        )
 
     if run.returncode == 0:
         return Result(mutant.name, "안 잡힘", summary, probe, reasons)
@@ -192,9 +227,14 @@ odd = _generate(_shifted_facts(timedelta(hours=37)))
 d_whole = sum(1 for a, b in zip(base, whole) if a['value'] != b['value'])
 d_odd = sum(1 for a, b in zip(base, odd) if a['value'] != b['value'])
 free = [r for r in base if r['sensor_code'] not in hinted_sensors(profs[r['eqp_id']])]
+pairs = {}
+for r in free:
+    if r['status'] == 'Warning':
+        k = (r['eqp_id'], r['sensor_code']); pairs[k] = pairs.get(k, 0) + 1
 print(f"정수일수 값차이 {d_whole:,} (원래 0) · 비정수 {d_odd:,} (원래 102,540) · "
       f"무지목 Alarm {sum(1 for r in free if r['status'] == 'Alarm')} (원래 0) · "
-      f"무지목 Warning {sum(1 for r in free if r['status'] == 'Warning')} (원래 2)")
+      f"무지목 Warning {sum(pairs.values())} (원래 2) · "
+      f"한 짝 최대 {max(pairs.values()) if pairs else 0} (원래 1)")
 """
 
 GROUPS: dict[str, list[Mutant]] = {
@@ -363,9 +403,13 @@ def main() -> int:
         print(f"\n=== {group} ===")
         for mutant in GROUPS[group]:
             result = _run(mutant)
-            mark = {"잡힘": "  ", "안 잡힘": "★ ", "미적용": "! ", "크래시": "! "}[
-                result.verdict
-            ]
+            mark = {
+                "잡힘": "  ",
+                "안 잡힘": "★ ",
+                "미적용": "! ",
+                "크래시": "! ",
+                "무효": "! ",
+            }[result.verdict]
             print(f"{mark}{result.name:34} {result.verdict}")
             if result.probe:
                 print(f"     지표 {result.probe}")

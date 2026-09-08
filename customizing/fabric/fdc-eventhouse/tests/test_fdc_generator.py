@@ -15,6 +15,7 @@ from src.fdc_generator import (
     align_to_grid,
     build_readings,
     classify,
+    diurnal,
     grid_timestamps,
     reading_value,
 )
@@ -196,8 +197,9 @@ def test_unhinted_sensors_never_alarm(day_rows, profiles):
 
     경보만 금지한다. 이전에는 `!= NORMAL` 로 검사해 주의까지 막았는데,
     그것은 지킬 수 없는 약속이었다. 경보 한계는 어느 센서든 10σ 밖이라
-    잡음으로 닿지 않지만 정상범위는 4.17~10σ 라서 주의는 확률적으로 나온다.
-    `RETICLE_TEMP` 는 10만 표본에 3건이 기대값이다.
+    잡음으로 닿지 않지만 정상 범위는 하루 주기를 빼고 나면 3.33σ 까지
+    좁아진다(`AMBIENT_TEMP` 는 진폭이 정상반폭의 60% 다). 주의는 확률적으로
+    나온다.
 
     통과하고 있었던 것은 잡음 시드가 절대 시각이던 시절의 우연이다. 시드를
     앵커 상대로 바꾸자마자 `GAS_FLOW` 가 주의를 냈다. 이름은 never_alarm
@@ -211,38 +213,96 @@ def test_unhinted_sensors_never_alarm(day_rows, profiles):
 
 
 def test_unhinted_warnings_stay_at_the_noise_floor(day_rows, profiles):
-    """무지목 주의는 나되 잡음이 낼 수 있는 만큼만 나야 한다.
+    """무지목 주의는 나되 환경과 잡음이 낼 수 있는 만큼만 나야 한다.
 
-    개수를 상수로 박으면 시드가 바뀔 때마다 갱신하게 된다. 정규분포에서
-    직접 기대값을 구해 대조한다. σ 나 정상범위를 조정하면 기대값이 따라
-    움직이므로 이 검사는 낡지 않는다.
+    개수를 상수로 박으면 시드가 바뀔 때마다 갱신하게 된다. 판독마다 기저가
+    어디에 있는지 알고 있으므로 정규분포에서 직접 기대값을 구한다. σ 나
+    정상범위나 하루 주기 진폭을 조정하면 기대값이 따라 움직인다.
 
-    상한이 기대값의 8배인 것은 건수가 한 자리라 포아송 요동이 크기
-    때문이다. 진짜로 막으려는 것은 자릿수가 다른 이탈 — 이탈 주입이 엉뚱한
-    센서에 걸리면 수백 건이 된다.
+    **하루 주기를 반드시 넣어야 한다.** 잡음만으로 계산하면 기대값이 0.001
+    이 나오는데 실측은 2 다. 2,000배 어긋난 모델로 한계를 세우면 하한이
+    실측에 걸쳐 원래 결함을 되돌려도 안 잡힌다. QMS 세션이 `3 <= 3` 으로
+    걸친 한계 때문에 원래 결함을 놓친 것과 같은 자리다.
+
+    상한은 포아송 꼬리가 10억분의 1 아래로 내려가는 지점이다. 진짜로
+    막으려는 것은 자릿수가 다른 이탈 — 이탈 주입이 지목 밖 센서에 걸리면
+    수천 건이 된다.
     """
     hinted_by_eqp = {eqp: hinted_sensors(p) for eqp, p in profiles.items()}
     expected = 0.0
     seen = 0
+    per_pair: dict[tuple[str, str], float] = {}
     for row in day_rows:
         if row["sensor_code"] in hinted_by_eqp[row["eqp_id"]]:
             continue
         seen += 1
         sensor = sensor_by_code(row["eqp_type"], row["sensor_code"])
         half = (sensor.normal_max - sensor.normal_min) / 2
-        expected += math.erfc(half / sensor.sigma / math.sqrt(2))
+        shift = diurnal(sensor, row["eqp_id"], row["reading_ts"])
+        # 기저가 shift 만큼 밀리면 위아래 여유가 달라진다. 양쪽 꼬리를 더한다.
+        chance = 0.5 * (
+            math.erfc((half - shift) / sensor.sigma / math.sqrt(2))
+            + math.erfc((half + shift) / sensor.sigma / math.sqrt(2))
+        )
+        expected += chance
+        pair = (row["eqp_id"], row["sensor_code"])
+        per_pair[pair] = per_pair.get(pair, 0.0) + chance
 
-    actual = sum(
-        1
-        for row in day_rows
-        if row["status"] == WARNING
-        and row["sensor_code"] not in hinted_by_eqp[row["eqp_id"]]
-    )
+    warned: dict[tuple[str, str], int] = {}
+    for row in day_rows:
+        if row["status"] != WARNING:
+            continue
+        if row["sensor_code"] in hinted_by_eqp[row["eqp_id"]]:
+            continue
+        pair = (row["eqp_id"], row["sensor_code"])
+        warned[pair] = warned.get(pair, 0) + 1
+    actual = sum(warned.values())
     assert seen, "무지목 판독이 없으면 비교가 성립하지 않는다"
-    assert actual <= max(3.0, expected * 8), (
-        f"무지목 주의 {actual}건은 잡음 기대 {expected:.2f}건(표본 {seen:,})으로"
-        " 설명되지 않는다. 이탈이 지목 밖 센서로 새는지 보라"
+
+    def poisson_limit(mean: float, budget: float) -> int:
+        """꼬리 확률이 budget 아래로 내려가는 첫 건수.
+
+        `tail` 은 P(X ≥ limit) 다. P(X=0) 에서 시작하면 꼬리가 아니라 머리라
+        아무리 빼도 예산 아래로 내려가지 않고 상한까지 돌아 그물이 사라진다.
+        실제로 그렇게 적어 한계 1000 을 얻고도 통과를 보고 넘어갈 뻔했다.
+        """
+        term = math.exp(-mean)
+        tail = 1.0 - term
+        limit = 1
+        while tail > budget and limit < 1000:
+            term *= mean / limit
+            tail -= term
+            limit += 1
+        assert limit < 1000, f"꼬리가 수렴하지 않는다(기대 {mean}). 유도를 보라"
+        return limit
+
+    limit = poisson_limit(expected, 1e-9)
+    assert actual < limit, (
+        f"무지목 주의 {actual}건은 환경+잡음 기대 {expected:.3f}건(표본 {seen:,})"
+        f" 으로 설명되지 않는다. 한계 {limit}. 이탈이 지목 밖 센서로 새는지 보라"
     )
+    # 한계가 실측 바로 위에 걸치면 결함을 되돌려도 안 잡힌다. 그물이
+    # 있는지가 아니라 그물에 여유가 있는지를 묻는다.
+    assert limit >= actual * 2, (
+        f"한계 {limit} 이 실측 {actual} 에 걸쳐 있다. 이 상태로는 무지목 주의가"
+        " 몇 건 늘어나도 통과한다. 기대값 모델을 다시 보라"
+    )
+
+    # 개수보다 자리가 예민하다. 잡음은 독립이라 한 짝에서 두 번 나오기 어렵고,
+    # 이탈은 지속되므로 같은 짝에 쌓인다. 시프트를 7개 재보면 총 건수는
+    # 0~2 로 흔들리는데 짝당 최대는 언제나 1 이었다. 약한 누수는 총 건수
+    # 한계를 통과할 수 있지만 자리에는 흔적을 남긴다.
+    budget = 1e-9 / max(len(per_pair), 1)  # 짝이 많으므로 예산을 나눈다
+    for pair, mean in sorted(per_pair.items()):
+        cap = poisson_limit(mean, budget)
+        got = warned.get(pair, 0)
+        assert got < cap, (
+            f"{pair[0]}/{pair[1]} 에 무지목 주의가 {got}건 몰렸다"
+            f"(기대 {mean:.4f} · 한계 {cap}). 잡음은 이렇게 뭉치지 않는다"
+        )
+        assert cap >= got * 2, (
+            f"{pair[0]}/{pair[1]} 의 한계 {cap} 이 실측 {got} 에 걸쳐 있다"
+        )
 
 
 def test_worst_equipment_has_more_alarms_than_best(day_rows, profiles):
