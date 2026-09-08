@@ -264,7 +264,7 @@ def test_readme_recovery_drops_every_table_the_notebook_writes():
     """
     readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
 
-    marker = "### ⚠️ MES를 앵커 없이 배포하면"
+    marker = "### 앵커가 움직였을 때 복구"
     assert marker in readme, "앵커 드리프트 절이 README 에서 사라졌습니다"
     start = readme.index(marker)
     end = readme.index("### ", start + len(marker))

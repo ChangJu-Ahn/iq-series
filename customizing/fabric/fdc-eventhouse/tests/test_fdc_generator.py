@@ -371,3 +371,127 @@ def test_a_result_registered_behind_the_watermark_never_gets_run_rows(facts):
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
     assert "| Eventhouse 최종 | **0** | 24 |" in readme
     assert "| 등록 후 처음부터 백필했다면 | **720** | 0 |" in readme
+
+
+def _shifted_facts(delta):
+    """공정이력 시각을 통째로 옮긴 사본. MES 콜드스타트와 같은 효과다.
+
+    MES 는 앵커를 마지막에 평행이동에만 쓴다(`Random(42)` 고정). 어느 로트가
+    어느 설비에서 몇 분 걸렸는지는 앵커가 어디든 불변이다. 실 API 와 픽스처의
+    상대구조 해시가 실제로 같다.
+    """
+    import copy
+    import json
+    from datetime import datetime
+
+    from src.mes_probe import MesFacts
+
+    root = Path(__file__).resolve().parent.parent
+    raw = json.loads(
+        (root / "tests" / "fixtures" / "mes_facts.json").read_text(encoding="utf-8")
+    )
+    moved = copy.deepcopy(raw)
+    for result in moved["process_results"]:
+        for field in ("in_time", "out_time"):
+            if result.get(field):
+                result[field] = (
+                    datetime.fromisoformat(result[field]) + delta
+                ).isoformat()
+    return MesFacts.from_dict(moved)
+
+
+def _generate(facts):
+    from src.fdc_runs import span
+
+    start, end = span(facts)
+    return build_readings(facts, start, end)
+
+
+def test_moving_the_anchor_keeps_the_shape_but_moves_the_alarms():
+    """앵커가 옮겨져도 골격은 같지만 경보는 달라진다.
+
+    참가자 20명이 각자 노트북을 돌린다. MES 앵커가 고정돼 있지 않으면 각자
+    다른 시각에 다른 앵커를 받는다. 그때 무엇이 같고 무엇이 다른지가
+    README 의 "앵커 고정은 선택이 아니다" 주장을 떠받친다.
+
+    골격이 같은 이유는 런 구조가 MES 에서 오기 때문이다. 경보가 달라지는
+    이유는 환경 성분이 하루 주기라서다 — 밤 공정이 새벽 공정이 되면 기저가
+    이동해 임계를 넘나드는 지점이 바뀐다. 물리적으로는 맞는 동작이라 고칠
+    것이 아니라 앵커를 고정해야 한다.
+
+    이 테스트가 실패하면 README 의 경고를 지워야 한다는 신호다.
+    """
+    from collections import Counter
+    from datetime import timedelta
+
+    base = _generate(_shifted_facts(timedelta(0)))
+    base_runs = Counter(row["run_status"] for row in base)
+    base_alarm_pairs = {
+        (row["eqp_id"], row.get("lot_id")) for row in base if row["status"] == "Alarm"
+    }
+    assert base_alarm_pairs, "원본에 경보가 없으면 비교가 성립하지 않는다"
+
+    moved_alarm_sets = []
+    for hours in (37, 24 * 11):
+        moved = _generate(_shifted_facts(timedelta(hours=hours)))
+
+        assert len(moved) == len(base), (
+            f"{hours}시간 옮겼더니 행 수가 {len(base):,} → {len(moved):,} 로 변했다."
+            " 런 구조는 MES 에서 오므로 평행이동에 영향받지 않아야 한다"
+        )
+        assert Counter(row["run_status"] for row in moved) == base_runs, (
+            "가동/유휴 배치가 변했다. MES 런 구간이 그대로인데 달라질 수 없다"
+        )
+        moved_alarm_sets.append(
+            {
+                (row["eqp_id"], row.get("lot_id"))
+                for row in moved
+                if row["status"] == "Alarm"
+            }
+        )
+
+    assert any(pairs != base_alarm_pairs for pairs in moved_alarm_sets), (
+        "앵커를 옮겨도 경보 설비가 그대로라면 README 의 '참가자마다 경보 설비가"
+        " 달라진다' 경고가 근거를 잃는다. 데이터를 고칠 게 아니라 경고를 지워야 한다"
+    )
+
+
+def test_readme_alarm_drift_numbers_are_measured():
+    """README 표의 수치가 실측과 맞아야 한다.
+
+    손으로 적어 두면 낡는다. 재배포로 구성이 달라지면 숫자만 맞춰 넣게 되므로
+    픽스처에서 직접 세어 대조한다.
+    """
+    import re
+    from collections import Counter
+    from datetime import timedelta
+
+    root = Path(__file__).resolve().parent.parent
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    marker = "### 그리고 참가자마다 경보 설비가 달라집니다"
+    assert marker in readme, "앵커가 경보를 옮긴다는 절이 사라졌다"
+    section = readme[readme.index(marker) :]
+    section = section[: section.index("\n### ", 1)]
+
+    base = _generate(_shifted_facts(timedelta(0)))
+    runs = Counter(row["run_status"] for row in base)
+
+    def cells(label):
+        line = next(ln for ln in section.splitlines() if ln.strip().startswith(f"| {label}"))
+        return line, [c.strip() for c in line.strip().strip("|").split("|")][1:]
+
+    # 골격 두 줄은 평행이동해도 안 변하므로 세 칸이 전부 같은 값이어야 한다.
+    # 집합 포함으로 검사하면 한 칸만 틀려도 나머지가 통과시킨다.
+    for label, value in (("판독 행", len(base)), ("Run / Idle", runs["Run"])):
+        line, got = cells(label)
+        assert len(got) == 3, f"'{label}' 칸 수가 달라졌다: {line.strip()}"
+        for index, cell in enumerate(got):
+            numbers = {int(n.replace(",", "")) for n in re.findall(r"\b\d[\d,]*\b", cell)}
+            assert value in numbers, (
+                f"'{label}' {index + 1}번째 칸이 실측 {value:,} 과 다르다: {cell}"
+            )
+
+    line, got = cells("**Alarm 행**")
+    alarms = sum(1 for row in base if row["status"] == "Alarm")
+    numbers = {int(n.replace(",", "")) for n in re.findall(r"\b\d[\d,]*\b", got[0])}
+    assert alarms in numbers, f"Alarm 실측 {alarms:,} 이 첫 칸과 다르다: {got[0]}"
