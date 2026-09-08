@@ -96,6 +96,51 @@ def test_characteristic_code_join_mostly_pairs_the_wrong_product(tables):
     assert flipped > 0, "판정이 뒤집히는 짝이 없으면 경고할 이유가 없습니다"
 
 
+def test_a_wrong_judgment_carries_no_unit_clue_that_would_reveal_it(tables):
+    """뒤집힌 판정 중 얼마가 단위로 알아챌 수 있는지 본다.
+
+    FDC 쪽에서 이 지표를 제시했다. 뒤집힘 비율만으로는 위험도를 못 잰다.
+    단위가 다르면 참가자가 이상하다고 느끼지만, 같으면 값도 단위도 그럴듯해
+    아무도 의심하지 않는다. FDC 는 78.2% 가 눈먼 상태였고 여기는 100% 다.
+    이 데이터셋의 여섯 특성은 각각 단위가 하나뿐이라 단서가 아예 없다.
+
+    이 어서션이 느슨해진다면 위험이 줄어든 것이므로 문서의 경고도 함께
+    손봐야 한다. 과잉 경고는 다른 경고까지 무디게 만든다.
+    """
+    by_char = defaultdict(list)
+    for spec in tables["qms_inspection_spec"]:
+        by_char[spec["characteristic_code"]].append(spec)
+
+    flipped = blind = 0
+    for row in tables["qms_measurement"]:
+        for spec in by_char[row["characteristic_code"]]:
+            if spec["spec_id"] == row["spec_id"]:
+                continue
+            outside = not spec["lsl"] <= row["measured_value"] <= spec["usl"]
+            if outside != row["is_out_of_spec"]:
+                flipped += 1
+                if spec["unit"] == row["unit"]:
+                    blind += 1
+
+    assert flipped > 0
+    assert blind / flipped > 0.5, (
+        f"뒤집힘 {flipped} 중 눈먼 것이 {blind / flipped:.1%} 뿐이라면 "
+        "단위가 위험을 드러내므로 경고 수위를 낮춰야 합니다"
+    )
+
+
+def test_specs_not_copied_into_measurement_still_need_a_join(tables):
+    """조인을 아예 없애지는 않았다는 것을 고정한다.
+
+    판정 네 값만 복제했다. 전부 복제하면 계측 테이블이 커지기만 하고 참가자가
+    조인을 한 번도 안 해보게 된다. 조인이 필요한 질문이 남아 있어야 복합키를
+    쓰는 연습이 된다.
+    """
+    spec_only = set(tables["qms_inspection_spec"][0]) - set(tables["qms_measurement"][0])
+    assert "cpk_target" in spec_only, "Cpk 목표까지 복제하면 조인할 이유가 사라집니다"
+    assert "sampling_method" in spec_only
+
+
 def test_the_same_characteristic_has_different_targets_per_product(tables):
     """22.65배가 단순한 중복이 아니라 규격 혼선인 근거.
 
@@ -173,6 +218,9 @@ def test_agent_doc_warns_about_every_dangerous_join():
 
     for phrase in ("`spec_id`", "`characteristic_code`", "`mes_defect_code`", "22.65배", "4.00배"):
         assert phrase in section, f"조인 경고 절에 {phrase} 가 없습니다"
+
+    assert "100%" in section, "뒤집힘 중 눈먼 비율이 적혀 있어야 합니다"
+    assert "`cpk_target`" in section, "조인이 필요한 질문의 예가 있어야 합니다"
 
 
 def test_documented_amplification_matches_the_data(tables):
