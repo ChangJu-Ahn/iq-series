@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 import build_notebook as builder
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -88,7 +90,20 @@ def test_notebook_uses_overwrite_mode_and_the_qms_prefix():
     assert 'TABLE_PREFIX = "qms_"' in joined
 
 
+@pytest.mark.stale_artifact
 def test_written_notebook_is_valid_and_current():
+    """디스크의 노트북이 지금 src 로 만든 것과 같은가.
+
+    이 테스트는 src 를 한 글자만 고쳐도 실패한다. 노트북이 생성물이기 때문이고,
+    그건 의도한 동작이다. 다만 돌연변이 검증에서는 함정이 된다. 무해한 주석 한
+    줄을 넣어도 "1 failed" 가 나오므로, 실패 건수만 보면 불변식이 잡은 것과
+    구별되지 않는다. 실제로 열화 시그마를 12배로 키운 돌연변이가 이 테스트
+    하나만 실패시켰고, 하마터면 "잡혔다" 로 읽을 뻔했다.
+
+    그래서 stale_artifact 마커를 달았다. 돌연변이를 돌릴 때는 src 를 고친 뒤
+    build_notebook.py 를 다시 돌려 이 테스트를 정상 통과시키고, 그러고도 남는
+    실패만 진짜 검출로 센다.
+    """
     import nbformat
 
     path = ROOT / "qms_lakehouse_seed.ipynb"
@@ -96,4 +111,7 @@ def test_written_notebook_is_valid_and_current():
     on_disk = nbformat.read(path, as_version=4)
     nbformat.validate(on_disk)
     fresh = builder.build_notebook(ROOT)
-    assert [c.source for c in on_disk.cells] == [c.source for c in fresh.cells]
+    assert [c.source for c in on_disk.cells] == [c.source for c in fresh.cells], (
+        "노트북이 src 와 어긋났습니다. python3 build_notebook.py 를 다시 도세요. "
+        "이 실패는 코드의 결함이 아니라 산출물 미갱신입니다."
+    )

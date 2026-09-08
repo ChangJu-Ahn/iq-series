@@ -24,8 +24,10 @@ from src.qms_reference import SEED_INSPECTION
 
 INSPECTION_COUNTS = {"IPQC": 91, "IPQC-RT": 40, "OQC": 24, "PCS": 36, "EQV": 16}
 
-# 정기 검사는 주간 근무조 안에서 수행한다. 시작 시각은 검사 종류마다 다르고
-# 여기서는 그 근무조가 몇 시간짜리인지만 정한다.
+# 공정능력조사(PCS)와 설비적격성(EQV)은 주간 근무조 안에서 수행한다. 시작
+# 시각은 검사 종류마다 다르고 여기서는 그 근무조가 몇 시간짜리인지만 정한다.
+# IPQC·IPQC-RT 는 공정 종료를 따라가고, OQC 는 로트 완료를 따라가므로 근무조와
+# 무관하다. 팹이 24시간 돌아가니 출하검사가 새벽에 잡히는 것도 정상이다.
 _SHIFT_LENGTH_HOURS = 8
 
 _TEAM_BY_TYPE = {
@@ -83,6 +85,12 @@ def _within_window(
     구간 안에서 근무조 시간대에 드는 시각만 후보로 모아 그중 하나를 고른다.
     범위를 벗어난 값을 양끝으로 자르는 방식을 쓰면 잘린 행들이 경계 시각
     하나에 그대로 쌓인다. 후보를 미리 거르면 그 뭉침이 생기지 않는다.
+
+    난수는 후보가 몇 개든 항상 두 번만 쓴다. rng.choice 와 분기별 randint 를
+    쓰면 소비 횟수가 후보 개수에 따라 달라져, 그 뒤에 뽑는 검사원과 측정값까지
+    통째로 밀린다. 앵커가 정수 일수로 움직일 때는 시(hour)가 그대로라 후보
+    집합도 같아서 드러나지 않는다. 한 시간만 옮기면 18종 106칸이 바뀌었고
+    그중에는 검사 판정 2건도 있었다.
     """
     start, end = window
     span_hours = int((end - start).total_seconds() // 3600)
@@ -92,11 +100,13 @@ def _within_window(
         if (moment := start + dt.timedelta(hours=offset)) + dt.timedelta(minutes=59) <= end
         and shift_hour <= moment.hour < shift_hour + _SHIFT_LENGTH_HOURS
     ]
+    position = rng.random()
+    minute = rng.randint(0, 59)
     if not candidates:
         # 구간이 근무조 하나보다 짧은 경우. 시간대를 포기하고 구간 안에서 고른다.
         seconds = max(int((end - start).total_seconds()), 0)
-        return start + dt.timedelta(seconds=rng.randint(0, seconds))
-    return rng.choice(candidates) + dt.timedelta(minutes=rng.randint(0, 59))
+        return start + dt.timedelta(seconds=int(position * (seconds + 1)))
+    return candidates[int(position * len(candidates))] + dt.timedelta(minutes=minute)
 
 
 def _bounded(rng: random.Random, low: int, high: int, cap: int) -> int:

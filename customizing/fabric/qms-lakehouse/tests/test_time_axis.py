@@ -159,14 +159,34 @@ def test_every_date_moves_with_the_anchor(snapshot, shifted):
     assert checked > 0, "검사한 날짜 값이 하나도 없습니다"
 
 
-def test_shifting_the_anchor_changes_nothing_but_time(snapshot, shifted):
+@pytest.mark.parametrize(
+    "delta",
+    [
+        SHIFT,
+        dt.timedelta(hours=37),
+        dt.timedelta(days=3, hours=7, minutes=41),
+        dt.timedelta(hours=13),
+    ],
+    ids=["27일", "37시간", "3일7시간41분", "13시간"],
+)
+def test_shifting_the_anchor_changes_nothing_but_time(snapshot, delta):
     """시각 말고는 전부 그대로여야 한다. 시프트가 다른 값을 흔들면 안 된다.
+
+    정수 일수가 아닌 폭을 함께 쓴다. SHIFT 하나(27일)만 쓰면 이동 전후로
+    시(hour)가 그대로라 하루 주기 성분에 눈이 먼다. 야간 검사의 산포를
+    1.8배로 키우는 돌연변이를 넣어 확인했다 — 규격이탈이 +37시간에서만
+    13에서 14로 바뀌는데, 27일 시프트로는 186개가 전부 통과했다.
+
+    FDC 는 환경 센서가 하루 주기라 앵커를 +37시간 옮기면 경보 설비가
+    7개에서 6개로 바뀌는 것을 찾았다. 그쪽은 물리적으로 맞는 동작이라
+    앵커를 고정하는 쪽으로 갔다. QMS 는 시각 자체 말고 시간에 의존하는 값이
+    없어야 한다. 그래야 재배포 시점이 데이터의 내용을 바꾸지 않는다.
 
     supplier_lot_no 는 예외다. 공급사 로트번호에 수입 연월이 들어 있어서
     날짜를 따라 바뀌는 것이 맞다. 아래 별도 테스트로 그 규칙을 고정한다.
     """
     before = build_all_tables(snapshot)
-    after = build_all_tables(shifted)
+    after = build_all_tables(shifted_snapshot(snapshot, delta))
     time_columns = {
         (name, column)
         for mapping in (timestamp_columns(), date_columns())

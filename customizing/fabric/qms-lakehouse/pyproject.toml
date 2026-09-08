@@ -3,5 +3,6 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "live: MES 서버에 실제로 접속하는 테스트. MES_API_KEY 필요",
+    "stale_artifact: 노트북이 src 와 어긋났는지만 보는 테스트. src 를 한 글자만 고쳐도 내용과 무관하게 실패한다",
 ]
 addopts = "-m 'not live'"
