@@ -611,7 +611,7 @@
       "priority": "Hot",
       "current_step": "TEST",
       "status": "Done",
-      "start_date": "2026-08-29",
+      "start_date": "2026-06-10",
       "product_name": "LX9 AP"
     },
     {
@@ -623,7 +623,7 @@
       "priority": "Low",
       "current_step": "TEST",
       "status": "Done",
-      "start_date": "2026-08-29",
+      "start_date": "2026-06-10",
       "product_name": "DDR5-16G"
     },
     {
@@ -635,7 +635,7 @@
       "priority": "Normal",
       "current_step": "TEST",
       "status": "Done",
-      "start_date": "2026-08-29",
+      "start_date": "2026-06-10",
       "product_name": "V7 NAND"
     },
     {
@@ -647,7 +647,7 @@
       "priority": "Low",
       "current_step": "TEST",
       "status": "Done",
-      "start_date": "2026-08-29",
+      "start_date": "2026-06-10",
       "product_name": "PMIC-33"
     },
     {
@@ -659,7 +659,7 @@
       "priority": "Hot",
       "current_step": "TEST",
       "status": "Done",
-      "start_date": "2026-08-29",
+      "start_date": "2026-06-10",
       "product_name": "LX9 AP"
     },
     {
@@ -671,7 +671,7 @@
       "priority": "Normal",
       "current_step": "TEST",
       "status": "Done",
-      "start_date": "2026-08-30",
+      "start_date": "2026-06-11",
       "product_name": "DDR5-16G"
     },
     {
@@ -683,7 +683,7 @@
       "priority": "Low",
       "current_step": "CVD",
       "status": "Hold",
-      "start_date": "2026-08-30",
+      "start_date": "2026-06-11",
       "product_name": "V7 NAND"
     },
     {
@@ -695,7 +695,7 @@
       "priority": "Normal",
       "current_step": "IMPL",
       "status": "Hold",
-      "start_date": "2026-08-30",
+      "start_date": "2026-06-11",
       "product_name": "PMIC-33"
     },
     {
@@ -707,7 +707,7 @@
       "priority": "Normal",
       "current_step": "ETCH",
       "status": "Running",
-      "start_date": "2026-08-30",
+      "start_date": "2026-06-11",
       "product_name": "LX9 AP"
     },
     {
@@ -719,7 +719,7 @@
       "priority": "Normal",
       "current_step": "ETCH",
       "status": "Running",
-      "start_date": "2026-08-30",
+      "start_date": "2026-06-11",
       "product_name": "DDR5-16G"
     },
     {
@@ -731,7 +731,7 @@
       "priority": "Low",
       "current_step": "CMP",
       "status": "Running",
-      "start_date": "2026-08-30",
+      "start_date": "2026-06-11",
       "product_name": "V7 NAND"
     },
     {
@@ -743,7 +743,7 @@
       "priority": "Normal",
       "current_step": "METRO",
       "status": "Running",
-      "start_date": "2026-08-31",
+      "start_date": "2026-06-12",
       "product_name": "PMIC-33"
     },
     {
@@ -755,7 +755,7 @@
       "priority": "Normal",
       "current_step": "CVD",
       "status": "Running",
-      "start_date": "2026-08-31",
+      "start_date": "2026-06-12",
       "product_name": "LX9 AP"
     },
     {
@@ -767,7 +767,7 @@
       "priority": "Low",
       "current_step": "ETCH",
       "status": "Running",
-      "start_date": "2026-08-31",
+      "start_date": "2026-06-12",
       "product_name": "DDR5-16G"
     },
     {
@@ -779,7 +779,7 @@
       "priority": "Normal",
       "current_step": "CVD",
       "status": "Running",
-      "start_date": "2026-08-31",
+      "start_date": "2026-06-12",
       "product_name": "V7 NAND"
     },
     {
@@ -791,7 +791,7 @@
       "priority": "Normal",
       "current_step": "PHOTO",
       "status": "Running",
-      "start_date": "2026-08-31",
+      "start_date": "2026-06-12",
       "product_name": "PMIC-33"
     }
   ],
@@ -805,8 +805,8 @@
       "out_qty": 23,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T21:40:00+00:00",
-      "out_time": "2026-09-01T00:00:00+00:00",
+      "in_time": "2026-06-12T21:40:00+00:00",
+      "out_time": "2026-06-13T00:00:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Deposition (CVD)"
@@ -820,8 +820,8 @@
       "out_qty": 22,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T21:02:00+00:00",
-      "out_time": "2026-08-31T22:03:00+00:00",
+      "in_time": "2026-06-12T21:02:00+00:00",
+      "out_time": "2026-06-12T22:03:00+00:00",
       "operator": "choi.dw",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -835,8 +835,8 @@
       "out_qty": 23,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T20:36:00+00:00",
-      "out_time": "2026-08-31T21:09:00+00:00",
+      "in_time": "2026-06-12T20:36:00+00:00",
+      "out_time": "2026-06-12T21:09:00+00:00",
       "operator": "choi.dw",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -850,8 +850,8 @@
       "out_qty": 22,
       "scrap_qty": 2,
       "defect_code": "Particle",
-      "in_time": "2026-08-31T19:13:00+00:00",
-      "out_time": "2026-08-31T20:43:00+00:00",
+      "in_time": "2026-06-12T19:13:00+00:00",
+      "out_time": "2026-06-12T20:43:00+00:00",
       "operator": "choi.dw",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -865,8 +865,8 @@
       "out_qty": 23,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T18:55:00+00:00",
-      "out_time": "2026-08-31T20:21:00+00:00",
+      "in_time": "2026-06-12T18:55:00+00:00",
+      "out_time": "2026-06-12T20:21:00+00:00",
       "operator": "choi.dw",
       "result": "Pass",
       "step_name": "Etch"
@@ -880,8 +880,8 @@
       "out_qty": 23,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T17:37:00+00:00",
-      "out_time": "2026-08-31T18:16:00+00:00",
+      "in_time": "2026-06-12T17:37:00+00:00",
+      "out_time": "2026-06-12T18:16:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -895,8 +895,8 @@
       "out_qty": 23,
       "scrap_qty": 2,
       "defect_code": "Particle",
-      "in_time": "2026-08-31T15:13:00+00:00",
-      "out_time": "2026-08-31T17:20:00+00:00",
+      "in_time": "2026-06-12T15:13:00+00:00",
+      "out_time": "2026-06-12T17:20:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -910,8 +910,8 @@
       "out_qty": 12,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T15:09:00+00:00",
-      "out_time": "2026-08-31T17:01:00+00:00",
+      "in_time": "2026-06-12T15:09:00+00:00",
+      "out_time": "2026-06-12T17:01:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Etch"
@@ -925,8 +925,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T14:22:00+00:00",
-      "out_time": "2026-08-31T16:27:00+00:00",
+      "in_time": "2026-06-12T14:22:00+00:00",
+      "out_time": "2026-06-12T16:27:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Deposition (CVD)"
@@ -940,8 +940,8 @@
       "out_qty": 12,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T14:05:00+00:00",
-      "out_time": "2026-08-31T14:35:00+00:00",
+      "in_time": "2026-06-12T14:05:00+00:00",
+      "out_time": "2026-06-12T14:35:00+00:00",
       "operator": "choi.dw",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -955,8 +955,8 @@
       "out_qty": 15,
       "scrap_qty": 2,
       "defect_code": "CD-OOS",
-      "in_time": "2026-08-31T13:31:00+00:00",
-      "out_time": "2026-08-31T13:59:00+00:00",
+      "in_time": "2026-06-12T13:31:00+00:00",
+      "out_time": "2026-06-12T13:59:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Metrology"
@@ -970,8 +970,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T12:59:00+00:00",
-      "out_time": "2026-08-31T13:46:00+00:00",
+      "in_time": "2026-06-12T12:59:00+00:00",
+      "out_time": "2026-06-12T13:46:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -985,8 +985,8 @@
       "out_qty": 12,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T11:13:00+00:00",
-      "out_time": "2026-08-31T13:29:00+00:00",
+      "in_time": "2026-06-12T11:13:00+00:00",
+      "out_time": "2026-06-12T13:29:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -1000,8 +1000,8 @@
       "out_qty": 17,
       "scrap_qty": 2,
       "defect_code": "Particle",
-      "in_time": "2026-08-31T12:23:00+00:00",
-      "out_time": "2026-08-31T13:20:00+00:00",
+      "in_time": "2026-06-12T12:23:00+00:00",
+      "out_time": "2026-06-12T13:20:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Planarization (CMP)"
@@ -1015,8 +1015,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T11:36:00+00:00",
-      "out_time": "2026-08-31T12:46:00+00:00",
+      "in_time": "2026-06-12T11:36:00+00:00",
+      "out_time": "2026-06-12T12:46:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Etch"
@@ -1030,8 +1030,8 @@
       "out_qty": 19,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T09:55:00+00:00",
-      "out_time": "2026-08-31T12:11:00+00:00",
+      "in_time": "2026-06-12T09:55:00+00:00",
+      "out_time": "2026-06-12T12:11:00+00:00",
       "operator": "jung.hy",
       "result": "Fail",
       "step_name": "Deposition (CVD)"
@@ -1045,8 +1045,8 @@
       "out_qty": 24,
       "scrap_qty": 1,
       "defect_code": "Overlay",
-      "in_time": "2026-08-31T10:06:00+00:00",
-      "out_time": "2026-08-31T11:19:00+00:00",
+      "in_time": "2026-06-12T10:06:00+00:00",
+      "out_time": "2026-06-12T11:19:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -1060,8 +1060,8 @@
       "out_qty": 21,
       "scrap_qty": 1,
       "defect_code": "CD-OOS",
-      "in_time": "2026-08-31T09:59:00+00:00",
-      "out_time": "2026-08-31T10:52:00+00:00",
+      "in_time": "2026-06-12T09:59:00+00:00",
+      "out_time": "2026-06-12T10:52:00+00:00",
       "operator": "lee.mh",
       "result": "Fail",
       "step_name": "Planarization (CMP)"
@@ -1075,8 +1075,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T07:13:00+00:00",
-      "out_time": "2026-08-31T09:56:00+00:00",
+      "in_time": "2026-06-12T07:13:00+00:00",
+      "out_time": "2026-06-12T09:56:00+00:00",
       "operator": "jung.hy",
       "result": "Fail",
       "step_name": "Diffusion"
@@ -1090,8 +1090,8 @@
       "out_qty": 19,
       "scrap_qty": 2,
       "defect_code": "Overlay",
-      "in_time": "2026-08-31T08:51:00+00:00",
-      "out_time": "2026-08-31T09:40:00+00:00",
+      "in_time": "2026-06-12T08:51:00+00:00",
+      "out_time": "2026-06-12T09:40:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -1105,8 +1105,8 @@
       "out_qty": 22,
       "scrap_qty": 2,
       "defect_code": "Etch-Residue",
-      "in_time": "2026-08-31T07:40:00+00:00",
-      "out_time": "2026-08-31T09:25:00+00:00",
+      "in_time": "2026-06-12T07:40:00+00:00",
+      "out_time": "2026-06-12T09:25:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Deposition (CVD)"
@@ -1120,8 +1120,8 @@
       "out_qty": 21,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T06:36:00+00:00",
-      "out_time": "2026-08-31T08:15:00+00:00",
+      "in_time": "2026-06-12T06:36:00+00:00",
+      "out_time": "2026-06-12T08:15:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Etch"
@@ -1135,8 +1135,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T06:13:00+00:00",
-      "out_time": "2026-08-31T07:13:00+00:00",
+      "in_time": "2026-06-12T06:13:00+00:00",
+      "out_time": "2026-06-12T07:13:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -1150,8 +1150,8 @@
       "out_qty": 21,
       "scrap_qty": 2,
       "defect_code": "Overlay",
-      "in_time": "2026-08-31T05:26:00+00:00",
-      "out_time": "2026-08-31T06:24:00+00:00",
+      "in_time": "2026-06-12T05:26:00+00:00",
+      "out_time": "2026-06-12T06:24:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -1165,8 +1165,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T03:50:00+00:00",
-      "out_time": "2026-08-31T05:33:00+00:00",
+      "in_time": "2026-06-12T03:50:00+00:00",
+      "out_time": "2026-06-12T05:33:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Etch"
@@ -1180,8 +1180,8 @@
       "out_qty": 23,
       "scrap_qty": 2,
       "defect_code": "Particle",
-      "in_time": "2026-08-31T03:13:00+00:00",
-      "out_time": "2026-08-31T05:06:00+00:00",
+      "in_time": "2026-06-12T03:13:00+00:00",
+      "out_time": "2026-06-12T05:06:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -1195,8 +1195,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-31T02:18:00+00:00",
-      "out_time": "2026-08-31T03:31:00+00:00",
+      "in_time": "2026-06-12T02:18:00+00:00",
+      "out_time": "2026-06-12T03:31:00+00:00",
       "operator": "choi.dw",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -1210,8 +1210,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T23:13:00+00:00",
-      "out_time": "2026-08-31T02:07:00+00:00",
+      "in_time": "2026-06-11T23:13:00+00:00",
+      "out_time": "2026-06-12T02:07:00+00:00",
       "operator": "jung.hy",
       "result": "Rework",
       "step_name": "Diffusion"
@@ -1225,8 +1225,8 @@
       "out_qty": 21,
       "scrap_qty": 2,
       "defect_code": "Particle",
-      "in_time": "2026-08-30T22:32:00+00:00",
-      "out_time": "2026-08-31T00:12:00+00:00",
+      "in_time": "2026-06-11T22:32:00+00:00",
+      "out_time": "2026-06-12T00:12:00+00:00",
       "operator": "lee.mh",
       "result": "Rework",
       "step_name": "Etch"
@@ -1240,8 +1240,8 @@
       "out_qty": 23,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T21:37:00+00:00",
-      "out_time": "2026-08-30T22:18:00+00:00",
+      "in_time": "2026-06-11T21:37:00+00:00",
+      "out_time": "2026-06-11T22:18:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -1255,8 +1255,8 @@
       "out_qty": 23,
       "scrap_qty": 1,
       "defect_code": "Overlay",
-      "in_time": "2026-08-30T20:09:00+00:00",
-      "out_time": "2026-08-30T21:06:00+00:00",
+      "in_time": "2026-06-11T20:09:00+00:00",
+      "out_time": "2026-06-11T21:06:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Etch"
@@ -1270,8 +1270,8 @@
       "out_qty": 23,
       "scrap_qty": 2,
       "defect_code": "Scratch",
-      "in_time": "2026-08-30T19:13:00+00:00",
-      "out_time": "2026-08-30T21:00:00+00:00",
+      "in_time": "2026-06-11T19:13:00+00:00",
+      "out_time": "2026-06-11T21:00:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -1285,8 +1285,8 @@
       "out_qty": 24,
       "scrap_qty": 1,
       "defect_code": "Contamination",
-      "in_time": "2026-08-30T18:26:00+00:00",
-      "out_time": "2026-08-30T19:35:00+00:00",
+      "in_time": "2026-06-11T18:26:00+00:00",
+      "out_time": "2026-06-11T19:35:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -1300,8 +1300,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T17:06:00+00:00",
-      "out_time": "2026-08-30T18:04:00+00:00",
+      "in_time": "2026-06-11T17:06:00+00:00",
+      "out_time": "2026-06-11T18:04:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -1315,8 +1315,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T15:13:00+00:00",
-      "out_time": "2026-08-30T18:00:00+00:00",
+      "in_time": "2026-06-11T15:13:00+00:00",
+      "out_time": "2026-06-11T18:00:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -1330,8 +1330,8 @@
       "out_qty": 18,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T14:22:00+00:00",
-      "out_time": "2026-08-30T17:39:00+00:00",
+      "in_time": "2026-06-11T14:22:00+00:00",
+      "out_time": "2026-06-11T17:39:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Wafer Test (EDS)"
@@ -1345,8 +1345,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T14:43:00+00:00",
-      "out_time": "2026-08-30T16:28:00+00:00",
+      "in_time": "2026-06-11T14:43:00+00:00",
+      "out_time": "2026-06-11T16:28:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Etch"
@@ -1360,8 +1360,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T14:04:00+00:00",
-      "out_time": "2026-08-30T15:20:00+00:00",
+      "in_time": "2026-06-11T14:04:00+00:00",
+      "out_time": "2026-06-11T15:20:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Deposition (CVD)"
@@ -1375,8 +1375,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T13:56:00+00:00",
-      "out_time": "2026-08-30T14:27:00+00:00",
+      "in_time": "2026-06-11T13:56:00+00:00",
+      "out_time": "2026-06-11T14:27:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -1390,8 +1390,8 @@
       "out_qty": 18,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T13:32:00+00:00",
-      "out_time": "2026-08-30T14:01:00+00:00",
+      "in_time": "2026-06-11T13:32:00+00:00",
+      "out_time": "2026-06-11T14:01:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Metrology"
@@ -1405,8 +1405,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T13:04:00+00:00",
-      "out_time": "2026-08-30T13:52:00+00:00",
+      "in_time": "2026-06-11T13:04:00+00:00",
+      "out_time": "2026-06-11T13:52:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -1420,8 +1420,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T11:13:00+00:00",
-      "out_time": "2026-08-30T13:32:00+00:00",
+      "in_time": "2026-06-11T11:13:00+00:00",
+      "out_time": "2026-06-11T13:32:00+00:00",
       "operator": "choi.dw",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -1435,8 +1435,8 @@
       "out_qty": 20,
       "scrap_qty": 3,
       "defect_code": "Particle",
-      "in_time": "2026-08-30T10:30:00+00:00",
-      "out_time": "2026-08-30T13:28:00+00:00",
+      "in_time": "2026-06-11T10:30:00+00:00",
+      "out_time": "2026-06-11T13:28:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Wafer Test (EDS)"
@@ -1450,8 +1450,8 @@
       "out_qty": 18,
       "scrap_qty": 2,
       "defect_code": "Overlay",
-      "in_time": "2026-08-30T12:33:00+00:00",
-      "out_time": "2026-08-30T13:09:00+00:00",
+      "in_time": "2026-06-11T12:33:00+00:00",
+      "out_time": "2026-06-11T13:09:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Planarization (CMP)"
@@ -1465,8 +1465,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T11:20:00+00:00",
-      "out_time": "2026-08-30T12:51:00+00:00",
+      "in_time": "2026-06-11T11:20:00+00:00",
+      "out_time": "2026-06-11T12:51:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Etch"
@@ -1480,8 +1480,8 @@
       "out_qty": 20,
       "scrap_qty": 1,
       "defect_code": "Scratch",
-      "in_time": "2026-08-30T10:31:00+00:00",
-      "out_time": "2026-08-30T11:53:00+00:00",
+      "in_time": "2026-06-11T10:31:00+00:00",
+      "out_time": "2026-06-11T11:53:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Deposition (CVD)"
@@ -1495,8 +1495,8 @@
       "out_qty": 24,
       "scrap_qty": 1,
       "defect_code": "Scratch",
-      "in_time": "2026-08-30T09:46:00+00:00",
-      "out_time": "2026-08-30T11:03:00+00:00",
+      "in_time": "2026-06-11T09:46:00+00:00",
+      "out_time": "2026-06-11T11:03:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -1510,8 +1510,8 @@
       "out_qty": 23,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T09:58:00+00:00",
-      "out_time": "2026-08-30T10:17:00+00:00",
+      "in_time": "2026-06-11T09:58:00+00:00",
+      "out_time": "2026-06-11T10:17:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Metrology"
@@ -1525,8 +1525,8 @@
       "out_qty": 21,
       "scrap_qty": 1,
       "defect_code": "Scratch",
-      "in_time": "2026-08-30T09:40:00+00:00",
-      "out_time": "2026-08-30T10:11:00+00:00",
+      "in_time": "2026-06-11T09:40:00+00:00",
+      "out_time": "2026-06-11T10:11:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -1540,8 +1540,8 @@
       "out_qty": 23,
       "scrap_qty": 2,
       "defect_code": "Scratch",
-      "in_time": "2026-08-30T09:10:00+00:00",
-      "out_time": "2026-08-30T09:40:00+00:00",
+      "in_time": "2026-06-11T09:10:00+00:00",
+      "out_time": "2026-06-11T09:40:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Planarization (CMP)"
@@ -1555,8 +1555,8 @@
       "out_qty": 20,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T05:45:00+00:00",
-      "out_time": "2026-08-30T09:33:00+00:00",
+      "in_time": "2026-06-11T05:45:00+00:00",
+      "out_time": "2026-06-11T09:33:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Wafer Test (EDS)"
@@ -1570,8 +1570,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T07:13:00+00:00",
-      "out_time": "2026-08-30T09:19:00+00:00",
+      "in_time": "2026-06-11T07:13:00+00:00",
+      "out_time": "2026-06-11T09:19:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -1585,8 +1585,8 @@
       "out_qty": 22,
       "scrap_qty": 3,
       "defect_code": "Particle",
-      "in_time": "2026-08-30T07:26:00+00:00",
-      "out_time": "2026-08-30T09:14:00+00:00",
+      "in_time": "2026-06-11T07:26:00+00:00",
+      "out_time": "2026-06-11T09:14:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Etch"
@@ -1600,8 +1600,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T07:01:00+00:00",
-      "out_time": "2026-08-30T08:52:00+00:00",
+      "in_time": "2026-06-11T07:01:00+00:00",
+      "out_time": "2026-06-11T08:52:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Deposition (CVD)"
@@ -1615,8 +1615,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T06:12:00+00:00",
-      "out_time": "2026-08-30T07:02:00+00:00",
+      "in_time": "2026-06-11T06:12:00+00:00",
+      "out_time": "2026-06-11T07:02:00+00:00",
       "operator": "choi.dw",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -1630,8 +1630,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T06:04:00+00:00",
-      "out_time": "2026-08-30T06:38:00+00:00",
+      "in_time": "2026-06-11T06:04:00+00:00",
+      "out_time": "2026-06-11T06:38:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -1645,8 +1645,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T03:13:00+00:00",
-      "out_time": "2026-08-30T05:52:00+00:00",
+      "in_time": "2026-06-11T03:13:00+00:00",
+      "out_time": "2026-06-11T05:52:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -1660,8 +1660,8 @@
       "out_qty": 16,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T02:43:00+00:00",
-      "out_time": "2026-08-30T05:43:00+00:00",
+      "in_time": "2026-06-11T02:43:00+00:00",
+      "out_time": "2026-06-11T05:43:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Wafer Test (EDS)"
@@ -1675,8 +1675,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T03:29:00+00:00",
-      "out_time": "2026-08-30T05:29:00+00:00",
+      "in_time": "2026-06-11T03:29:00+00:00",
+      "out_time": "2026-06-11T05:29:00+00:00",
       "operator": "jung.hy",
       "result": "Fail",
       "step_name": "Etch"
@@ -1690,8 +1690,8 @@
       "out_qty": 20,
       "scrap_qty": 1,
       "defect_code": "Contamination",
-      "in_time": "2026-08-30T05:06:00+00:00",
-      "out_time": "2026-08-30T05:22:00+00:00",
+      "in_time": "2026-06-11T05:06:00+00:00",
+      "out_time": "2026-06-11T05:22:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Metrology"
@@ -1705,8 +1705,8 @@
       "out_qty": 21,
       "scrap_qty": 1,
       "defect_code": "Overlay",
-      "in_time": "2026-08-30T03:50:00+00:00",
-      "out_time": "2026-08-30T04:45:00+00:00",
+      "in_time": "2026-06-11T03:50:00+00:00",
+      "out_time": "2026-06-11T04:45:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Planarization (CMP)"
@@ -1720,8 +1720,8 @@
       "out_qty": 22,
       "scrap_qty": 1,
       "defect_code": "Etch-Residue",
-      "in_time": "2026-08-30T02:19:00+00:00",
-      "out_time": "2026-08-30T03:20:00+00:00",
+      "in_time": "2026-06-11T02:19:00+00:00",
+      "out_time": "2026-06-11T03:20:00+00:00",
       "operator": "choi.dw",
       "result": "Pass",
       "step_name": "Deposition (CVD)"
@@ -1735,8 +1735,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T02:13:00+00:00",
-      "out_time": "2026-08-30T02:54:00+00:00",
+      "in_time": "2026-06-11T02:13:00+00:00",
+      "out_time": "2026-06-11T02:54:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -1750,8 +1750,8 @@
       "out_qty": 22,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T22:52:00+00:00",
-      "out_time": "2026-08-30T02:43:00+00:00",
+      "in_time": "2026-06-10T22:52:00+00:00",
+      "out_time": "2026-06-11T02:43:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Wafer Test (EDS)"
@@ -1765,8 +1765,8 @@
       "out_qty": 23,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-30T01:00:00+00:00",
-      "out_time": "2026-08-30T01:55:00+00:00",
+      "in_time": "2026-06-11T01:00:00+00:00",
+      "out_time": "2026-06-11T01:55:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -1780,8 +1780,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T23:13:00+00:00",
-      "out_time": "2026-08-30T01:47:00+00:00",
+      "in_time": "2026-06-10T23:13:00+00:00",
+      "out_time": "2026-06-11T01:47:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -1795,8 +1795,8 @@
       "out_qty": 16,
       "scrap_qty": 2,
       "defect_code": "Contamination",
-      "in_time": "2026-08-30T01:14:00+00:00",
-      "out_time": "2026-08-30T01:37:00+00:00",
+      "in_time": "2026-06-11T01:14:00+00:00",
+      "out_time": "2026-06-11T01:37:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Metrology"
@@ -1810,8 +1810,8 @@
       "out_qty": 18,
       "scrap_qty": 2,
       "defect_code": "Etch-Residue",
-      "in_time": "2026-08-29T23:44:00+00:00",
-      "out_time": "2026-08-30T00:34:00+00:00",
+      "in_time": "2026-06-10T23:44:00+00:00",
+      "out_time": "2026-06-11T00:34:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Planarization (CMP)"
@@ -1825,8 +1825,8 @@
       "out_qty": 23,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T23:04:00+00:00",
-      "out_time": "2026-08-30T00:33:00+00:00",
+      "in_time": "2026-06-10T23:04:00+00:00",
+      "out_time": "2026-06-11T00:33:00+00:00",
       "operator": "lee.mh",
       "result": "Fail",
       "step_name": "Etch"
@@ -1840,8 +1840,8 @@
       "out_qty": 20,
       "scrap_qty": 2,
       "defect_code": "Etch-Residue",
-      "in_time": "2026-08-29T21:54:00+00:00",
-      "out_time": "2026-08-29T23:16:00+00:00",
+      "in_time": "2026-06-10T21:54:00+00:00",
+      "out_time": "2026-06-10T23:16:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Deposition (CVD)"
@@ -1855,8 +1855,8 @@
       "out_qty": 22,
       "scrap_qty": 1,
       "defect_code": "Scratch",
-      "in_time": "2026-08-29T22:03:00+00:00",
-      "out_time": "2026-08-29T22:27:00+00:00",
+      "in_time": "2026-06-10T22:03:00+00:00",
+      "out_time": "2026-06-10T22:27:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Metrology"
@@ -1870,8 +1870,8 @@
       "out_qty": 23,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T21:07:00+00:00",
-      "out_time": "2026-08-29T22:25:00+00:00",
+      "in_time": "2026-06-10T21:07:00+00:00",
+      "out_time": "2026-06-10T22:25:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -1885,8 +1885,8 @@
       "out_qty": 22,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T21:06:00+00:00",
-      "out_time": "2026-08-29T21:44:00+00:00",
+      "in_time": "2026-06-10T21:06:00+00:00",
+      "out_time": "2026-06-10T21:44:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -1900,8 +1900,8 @@
       "out_qty": 23,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T21:10:00+00:00",
-      "out_time": "2026-08-29T21:42:00+00:00",
+      "in_time": "2026-06-10T21:10:00+00:00",
+      "out_time": "2026-06-10T21:42:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Planarization (CMP)"
@@ -1915,8 +1915,8 @@
       "out_qty": 21,
       "scrap_qty": 1,
       "defect_code": "Contamination",
-      "in_time": "2026-08-29T18:24:00+00:00",
-      "out_time": "2026-08-29T21:10:00+00:00",
+      "in_time": "2026-06-10T18:24:00+00:00",
+      "out_time": "2026-06-10T21:10:00+00:00",
       "operator": "choi.dw",
       "result": "Pass",
       "step_name": "Wafer Test (EDS)"
@@ -1930,8 +1930,8 @@
       "out_qty": 23,
       "scrap_qty": 1,
       "defect_code": "Etch-Residue",
-      "in_time": "2026-08-29T18:29:00+00:00",
-      "out_time": "2026-08-29T20:56:00+00:00",
+      "in_time": "2026-06-10T18:29:00+00:00",
+      "out_time": "2026-06-10T20:56:00+00:00",
       "operator": "choi.dw",
       "result": "Pass",
       "step_name": "Deposition (CVD)"
@@ -1945,8 +1945,8 @@
       "out_qty": 23,
       "scrap_qty": 2,
       "defect_code": "Contamination",
-      "in_time": "2026-08-29T19:13:00+00:00",
-      "out_time": "2026-08-29T20:54:00+00:00",
+      "in_time": "2026-06-10T19:13:00+00:00",
+      "out_time": "2026-06-10T20:54:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -1960,8 +1960,8 @@
       "out_qty": 22,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T18:58:00+00:00",
-      "out_time": "2026-08-29T20:30:00+00:00",
+      "in_time": "2026-06-10T18:58:00+00:00",
+      "out_time": "2026-06-10T20:30:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Etch"
@@ -1975,8 +1975,8 @@
       "out_qty": 22,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T17:05:00+00:00",
-      "out_time": "2026-08-29T18:19:00+00:00",
+      "in_time": "2026-06-10T17:05:00+00:00",
+      "out_time": "2026-06-10T18:19:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -1990,8 +1990,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T17:19:00+00:00",
-      "out_time": "2026-08-29T18:18:00+00:00",
+      "in_time": "2026-06-10T17:19:00+00:00",
+      "out_time": "2026-06-10T18:18:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -2005,8 +2005,8 @@
       "out_qty": 22,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T17:30:00+00:00",
-      "out_time": "2026-08-29T17:53:00+00:00",
+      "in_time": "2026-06-10T17:30:00+00:00",
+      "out_time": "2026-06-10T17:53:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Metrology"
@@ -2020,8 +2020,8 @@
       "out_qty": 22,
       "scrap_qty": 2,
       "defect_code": "Overlay",
-      "in_time": "2026-08-29T16:46:00+00:00",
-      "out_time": "2026-08-29T17:20:00+00:00",
+      "in_time": "2026-06-10T16:46:00+00:00",
+      "out_time": "2026-06-10T17:20:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Planarization (CMP)"
@@ -2035,8 +2035,8 @@
       "out_qty": 24,
       "scrap_qty": 1,
       "defect_code": "Particle",
-      "in_time": "2026-08-29T15:13:00+00:00",
-      "out_time": "2026-08-29T17:01:00+00:00",
+      "in_time": "2026-06-10T15:13:00+00:00",
+      "out_time": "2026-06-10T17:01:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Etch"
@@ -2050,8 +2050,8 @@
       "out_qty": 22,
       "scrap_qty": 2,
       "defect_code": "Scratch",
-      "in_time": "2026-08-29T15:13:00+00:00",
-      "out_time": "2026-08-29T16:49:00+00:00",
+      "in_time": "2026-06-10T15:13:00+00:00",
+      "out_time": "2026-06-10T16:49:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -2065,8 +2065,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T13:42:00+00:00",
-      "out_time": "2026-08-29T16:21:00+00:00",
+      "in_time": "2026-06-10T13:42:00+00:00",
+      "out_time": "2026-06-10T16:21:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Deposition (CVD)"
@@ -2080,8 +2080,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T14:09:00+00:00",
-      "out_time": "2026-08-29T14:56:00+00:00",
+      "in_time": "2026-06-10T14:09:00+00:00",
+      "out_time": "2026-06-10T14:56:00+00:00",
       "operator": "park.sy",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -2095,8 +2095,8 @@
       "out_qty": 25,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T11:13:00+00:00",
-      "out_time": "2026-08-29T13:43:00+00:00",
+      "in_time": "2026-06-10T11:13:00+00:00",
+      "out_time": "2026-06-10T13:43:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Diffusion"
@@ -2110,8 +2110,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T12:28:00+00:00",
-      "out_time": "2026-08-29T13:25:00+00:00",
+      "in_time": "2026-06-10T12:28:00+00:00",
+      "out_time": "2026-06-10T13:25:00+00:00",
       "operator": "lee.mh",
       "result": "Pass",
       "step_name": "Ion Implant"
@@ -2125,8 +2125,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T10:27:00+00:00",
-      "out_time": "2026-08-29T12:11:00+00:00",
+      "in_time": "2026-06-10T10:27:00+00:00",
+      "out_time": "2026-06-10T12:11:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Etch"
@@ -2140,8 +2140,8 @@
       "out_qty": 24,
       "scrap_qty": 0,
       "defect_code": null,
-      "in_time": "2026-08-29T09:14:00+00:00",
-      "out_time": "2026-08-29T10:09:00+00:00",
+      "in_time": "2026-06-10T09:14:00+00:00",
+      "out_time": "2026-06-10T10:09:00+00:00",
       "operator": "kim.js",
       "result": "Pass",
       "step_name": "Photolithography"
@@ -2155,8 +2155,8 @@
       "out_qty": 24,
       "scrap_qty": 1,
       "defect_code": "Scratch",
-      "in_time": "2026-08-29T07:13:00+00:00",
-      "out_time": "2026-08-29T08:58:00+00:00",
+      "in_time": "2026-06-10T07:13:00+00:00",
+      "out_time": "2026-06-10T08:58:00+00:00",
       "operator": "jung.hy",
       "result": "Pass",
       "step_name": "Diffusion"
