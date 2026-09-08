@@ -219,8 +219,137 @@ def test_degradation_widens_scatter_by_the_documented_multiple(snapshot):
     doc = (Path(__file__).resolve().parents[1] / "data-agent-schema.md").read_text(
         encoding="utf-8"
     )
-    stated = re.search(r"정상 로트보다 \*\*([\d.]+)배\*\* 흩어지", doc)
+    stated = re.search(r"정상보다 \*\*([\d.]+)배\*\* 넓게 흩어지", doc)
     assert stated, "문서에 열화 배수 문장이 없습니다"
     assert abs(float(stated.group(1)) - multiple) < 0.25, (
         f"문서는 {stated.group(1)}배라는데 실측은 {multiple:.2f}배입니다"
     )
+
+
+def _degraded_split(inspections, rows):
+    index = {i["inspection_id"]: i for i in inspections}
+
+    def hot(row):
+        i = index[row["inspection_id"]]
+        return i["judgment"] == "조건부합격" and i["has_nonconformance"]
+
+    return [r for r in rows if hot(r)], [r for r in rows if not hot(r)], index
+
+
+def test_degradation_never_lands_on_a_lot(snapshot):
+    """열화군에 로트가 있는지 본다.
+
+    문서가 "열화 로트는 산포가 넓습니다" 라고 적고 "조건부합격 로트의 계측이 왜
+    흔들리는가" 를 예시 질문으로 들고 있었다. 그런데 열화 계측은 전부 PCS 에서
+    나오고 PCS 에는 lot_id 가 없다. 생성기 주석은 처음부터 "공정능력 미달(PCS
+    조건부합격)" 이라고 정확히 적혀 있었고 문서만 로트를 지어냈다.
+
+    에이전트가 없는 것을 묶어 답하면 참가자는 빈 결과를 받는다.
+    """
+    inspections, rows = measurements(snapshot)
+    hot, _, index = _degraded_split(inspections, rows)
+    assert hot, "열화군이 비면 이 경고가 무의미합니다"
+
+    types = {index[r["inspection_id"]]["inspection_type"] for r in hot}
+    assert types == {"PCS"}, f"열화군에 PCS 아닌 유형이 있습니다: {types}"
+
+    lots = {index[r["inspection_id"]]["lot_id"] for r in hot}
+    assert lots == {None}, f"열화군에 로트가 생겼습니다: {lots - {None}}"
+
+
+def test_retests_never_carry_degradation(snapshot):
+    """재검사에 열화가 안 붙는 이유를 고정한다.
+
+    IPQC-RT 는 조건부합격이 12건, 부적합이 10건 있는데 교집합이 0 이다.
+    부적합이 달린 재검사는 전부 불합격이라 열화 조건과 겹치지 않는다.
+    이것이 깨지면 열화군에 로트가 생기므로 문서를 함께 고쳐야 한다.
+    """
+    inspections, _ = measurements(snapshot)
+    retests = [i for i in inspections if i["inspection_type"] == "IPQC-RT"]
+    assert retests, "픽스처에 재검사가 없습니다"
+
+    flagged = [i for i in retests if i["has_nonconformance"]]
+    assert flagged, "부적합이 달린 재검사가 없으면 이 검사가 무의미합니다"
+    assert {i["judgment"] for i in flagged} == {"불합격"}, (
+        "부적합이 달린 재검사에 조건부합격이 생기면 열화군에 로트가 들어옵니다. "
+        "data-agent-schema.md 의 열화 문단을 함께 고치세요"
+    )
+
+
+def test_every_characteristic_is_measured_once_per_inspection(snapshot):
+    """검사·특성마다 측정이 몇 점인지 고정한다.
+
+    한 점뿐이면 Cpk 도 표준편차도 관리도도 산출할 수 없다. 문서가 그렇게
+    안내하므로 그 전제를 여기서 지킨다. 늘리면 통계 질문이 성립하게 되므로
+    문서의 "계산할 수 없습니다" 를 함께 고쳐야 한다.
+    """
+    _, rows = measurements(snapshot)
+    per_group = collections.Counter(
+        (r["inspection_id"], r["characteristic_code"]) for r in rows
+    )
+    assert set(per_group.values()) == {1}, (
+        f"검사·특성당 측정이 {sorted(set(per_group.values()))} 점입니다. "
+        "표본이 생겼다면 data-agent-schema.md 의 Cpk 안내를 고치세요"
+    )
+
+
+def test_sample_and_site_numbers_are_the_same_column(snapshot):
+    """sample_no 와 site_no 가 실제로 갈리는지 본다.
+
+    문서가 둘을 웨이퍼 번호와 측정 포인트라는 다른 개념으로 적어 두었는데
+    260행 전부 같은 값이었다. 에이전트가 "웨이퍼별로 몇 포인트를 쟀나" 에
+    답하면 없는 구조를 지어내게 된다.
+    """
+    _, rows = measurements(snapshot)
+    assert all(r["sample_no"] == r["site_no"] for r in rows), (
+        "두 컬럼이 갈리기 시작했다면 data-agent-schema.md 의 설명을 되돌리세요"
+    )
+
+
+def test_the_documented_invisibility_of_degradation_holds(snapshot):
+    """배달된 데이터에서 열화가 안 보인다는 문서의 두 수치를 대조한다.
+
+    생성 배수 2.2 는 전부 열화 / 전부 정상 두 벌을 만들어야만 보인다. 참가자가
+    받는 데이터에는 열화 계측이 21행뿐이라 규격폭으로 정규화하면 1.03배로
+    묻힌다. 정규화 없이 deviation_pct 를 모으면 3.35배가 나오지만 그것은 두
+    군의 특성 구성 차이지 열화가 아니다.
+
+    문서가 이 두 숫자를 근거로 "답하지 마세요" 라고 안내하므로, 숫자가
+    움직이면 안내의 근거가 사라진다. 픽스처를 다시 떠도 표본이 조금 달라질 뿐
+    구조는 같으므로 좁게 잡지 않는다.
+    """
+    import re
+    import statistics
+    from pathlib import Path
+
+    inspections, rows = measurements(snapshot)
+    hot, cold, _ = _degraded_split(inspections, rows)
+
+    normalised = _normalised_spread(hot, continuous_only=True) / _normalised_spread(
+        cold, continuous_only=True
+    )
+    raw = statistics.pstdev(
+        [abs(r["deviation_pct"]) for r in hot if r["unit"] != "ea"]
+    ) / statistics.pstdev([abs(r["deviation_pct"]) for r in cold if r["unit"] != "ea"])
+
+    assert normalised < 1.5, (
+        f"정규화 산포비가 {normalised:.2f} 로 올라갔다면 열화가 보이기 시작한 것입니다. "
+        "문서의 '확인되지 않습니다' 를 고치세요"
+    )
+    assert raw > 2.0, (
+        f"정규화 없는 비가 {raw:.2f} 라면 특성 구성 차이가 사라진 것입니다. "
+        "문서가 경고하는 함정이 없어졌는지 확인하세요"
+    )
+
+    doc = (Path(__file__).resolve().parents[1] / "data-agent-schema.md").read_text(
+        encoding="utf-8"
+    )
+    for pattern, actual, tolerance in (
+        (r"정상군 대비 \*\*([\d.]+)배\*\*로 잡음에 묻힙니다", normalised, 0.3),
+        (r"그냥 모으면 ([\d.]+)배가 나오지만", raw, 0.6),
+    ):
+        stated = re.search(pattern, doc)
+        assert stated, f"문서에서 {pattern} 를 못 찾았습니다"
+        assert abs(float(stated.group(1)) - actual) < tolerance, (
+            f"문서 {stated.group(1)} vs 실측 {actual:.2f}"
+        )

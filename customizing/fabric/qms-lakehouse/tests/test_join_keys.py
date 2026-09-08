@@ -304,3 +304,122 @@ def test_documented_amplification_matches_the_data(tables):
         tables["qms_measurement"], tables["qms_inspection_spec"], ["characteristic_code"]
     ) / len(tables["qms_measurement"])
     assert abs(stated - actual) < 3.0, f"문서 {stated}배 vs 실제 {actual:.2f}배"
+
+
+def test_the_documented_flip_table_matches_the_data(tables):
+    """문서의 특성별 표를 칸 단위로 데이터와 대조한다.
+
+    이 표의 뒤집힘 칸이 432 로 적혀 있다가 실제로는 420 이 된 적이 있다.
+    RNG 소비를 고치면서 측정값이 바뀐 것인데 세 커밋 동안 아무도 몰랐다.
+    문서 검사가 "89%" 처럼 문자열이 있는지만 봤기 때문이다. 문자열 존재는
+    데이터가 바뀌어도 그대로다.
+
+    한 칸만 대조하면 나머지 칸이 통과시킨다. 표 전체를 읽어 세 열을 전부 센다.
+    """
+    text = AGENT_DOC.read_text(encoding="utf-8")
+    rows = re.findall(r"^\| (CD|OVL|THK|PTC|RS|WRP) \| ([\d,]+)행 \| ([\d,]+) \| ([\d,]+) \|", text, re.M)
+    assert len(rows) == 6, f"문서 표에서 여섯 특성을 못 찾았습니다: {rows}"
+
+    by_char = defaultdict(list)
+    for spec in tables["qms_inspection_spec"]:
+        by_char[spec["characteristic_code"]].append(spec)
+
+    for code, spec_rows, amplified, flipped in rows:
+        hits = by_char[code]
+        assert len(hits) == int(spec_rows.replace(",", "")), (
+            f"{code} 스펙 행수: 문서 {spec_rows} vs 실제 {len(hits)}"
+        )
+
+        seen = [m for m in tables["qms_measurement"] if m["characteristic_code"] == code]
+        assert len(seen) * len(hits) == int(amplified.replace(",", "")), (
+            f"{code} 부풀림: 문서 {amplified} vs 실제 {len(seen) * len(hits)}"
+        )
+
+        flips = sum(
+            1
+            for m in seen
+            for spec in hits
+            if spec["spec_id"] != m["spec_id"]
+            and (not spec["lsl"] <= m["measured_value"] <= spec["usl"]) != m["is_out_of_spec"]
+        )
+        assert flips == int(flipped.replace(",", "")), (
+            f"{code} 뒤집힘: 문서 {flipped} vs 실제 {flips}"
+        )
+
+
+def test_the_documented_flip_total_matches_the_table(tables):
+    """본문에 적은 합계가 표의 합과 맞는지 본다.
+
+    표만 고치고 본문을 두면 두 곳이 갈린다. 실제로 그렇게 갈렸다.
+    """
+    text = AGENT_DOC.read_text(encoding="utf-8")
+    stated = re.search(r"판정 뒤집힘 ([\d,]+) \(([\d.]+)%\)", text)
+    assert stated, "본문에 뒤집힘 합계가 없습니다"
+
+    by_char = defaultdict(list)
+    for spec in tables["qms_inspection_spec"]:
+        by_char[spec["characteristic_code"]].append(spec)
+    wrong = flips = 0
+    for m in tables["qms_measurement"]:
+        for spec in by_char[m["characteristic_code"]]:
+            if spec["spec_id"] == m["spec_id"]:
+                continue
+            wrong += 1
+            if (not spec["lsl"] <= m["measured_value"] <= spec["usl"]) != m["is_out_of_spec"]:
+                flips += 1
+
+    assert int(stated.group(1).replace(",", "")) == flips, (
+        f"본문 뒤집힘 {stated.group(1)} vs 실제 {flips}"
+    )
+    assert abs(float(stated.group(2)) - flips / wrong * 100) < 0.1, (
+        f"본문 비율 {stated.group(2)}% vs 실제 {flips / wrong * 100:.1f}%"
+    )
+
+
+def test_the_documented_characteristic_spread_names_the_widest(tables):
+    """`CD 하나에 16행` 같은 문장이 실제 스펙 분포와 맞는지 본다.
+
+    이 문장이 32행이라고 적혀 있었는데 32 는 PTC 였다. 바로 아래 표가 CD 를
+    16행이라고 적고 있었으므로 문서 안에서 이미 모순이었다. 표만 대조하는
+    검사는 본문의 이 문장을 안 본다.
+    """
+    text = AGENT_DOC.read_text(encoding="utf-8")
+    counts = Counter(s["characteristic_code"] for s in tables["qms_inspection_spec"])
+    widest, most = counts.most_common(1)[0]
+
+    stated = re.search(r"`CD` 하나에 \*\*(\d+)행\*\*이 걸리고, 가장 많은 `(\w+)` 는 (\d+)행", text)
+    assert stated, "특성별 스펙 행수를 적은 문장이 없습니다"
+    assert int(stated.group(1)) == counts["CD"], f"CD: 문서 {stated.group(1)} vs 실제 {counts['CD']}"
+    assert stated.group(2) == widest, f"최다 특성: 문서 {stated.group(2)} vs 실제 {widest}"
+    assert int(stated.group(3)) == most, f"최다 행수: 문서 {stated.group(3)} vs 실제 {most}"
+
+
+def test_the_documented_step_only_join_states_both_baselines(tables):
+    """"12배" 가 무엇 대비인지 문서가 밝히는지 본다.
+
+    배수만 적으면 분모를 짐작해야 한다. 앞 문장이 "207 → 573행" 이라 573 대비로
+    읽히는데 실제로는 207 대비였다. 행수와 두 배수를 모두 적게 하고 전부 센다.
+    """
+    text = AGENT_DOC.read_text(encoding="utf-8")
+    stated = re.search(
+        r"`step_code` 단독으로 조인하면 \*\*([\d,]+)행\*\*이 되어 "
+        r"올바른 조인의 ([\d.]+)배, 검사 원본의 ([\d.]+)배",
+        text,
+    )
+    assert stated, "step_code 단독 조인의 규모를 적은 문장이 없습니다"
+
+    base = len(tables["qms_inspection"])
+    right = _join_size(
+        tables["qms_inspection"], tables["qms_inspection_spec"], ["product_code", "step_code"]
+    )
+    wrong = _join_size(tables["qms_inspection"], tables["qms_inspection_spec"], ["step_code"])
+
+    assert int(stated.group(1).replace(",", "")) == wrong, (
+        f"행수: 문서 {stated.group(1)} vs 실제 {wrong}"
+    )
+    assert abs(float(stated.group(2)) - wrong / right) < 0.1, (
+        f"올바른 조인 대비: 문서 {stated.group(2)}배 vs 실제 {wrong / right:.1f}배"
+    )
+    assert abs(float(stated.group(3)) - wrong / base) < 0.1, (
+        f"검사 원본 대비: 문서 {stated.group(3)}배 vs 실제 {wrong / base:.1f}배"
+    )
