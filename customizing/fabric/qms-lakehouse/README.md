@@ -177,6 +177,9 @@ python3 -m pytest -q -m 'not live and not stale_artifact'
 
 ## 다음 단계
 
-이 레이크하우스로 Fabric Data Agent를 만들고, `data-agent-schema.md`를 에이전트
-지식으로 넣습니다. 그다음 Foundry 에이전트에 이 Data Agent와 MES MCP 엔드포인트를
-함께 붙이면 두 시스템에 걸친 질문에 답할 수 있습니다.
+이 레이크하우스로 Fabric Data Agent를 만듭니다. 어느 칸에 무엇을 넣는지는
+`data-agent-instructions.md`에 있습니다 — 데이터 원본 지시문에는
+`data-agent-schema.md` 전체를 넣고, 나머지 세 칸은 그 문서의 블록을 복사합니다.
+
+그다음 Foundry 에이전트에 이 Data Agent와 MES MCP 엔드포인트를 함께 붙이면 두
+시스템에 걸친 질문에 답할 수 있습니다.

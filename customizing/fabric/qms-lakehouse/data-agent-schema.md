@@ -269,6 +269,21 @@ MES의 상위 불량코드 6종을 QMS가 원인·조치 단위로 4단계씩 �
 없고 모든 시각이 그 기준점에서 유도됩니다. MES를 재배포하면 QMS 데이터도 통째로
 따라 이동합니다.
 
+**`current_date()`나 `now()`를 쓰면 안 됩니다.** 실제 오늘과 이 데이터의 "지금"은
+다릅니다. QMS 안에서 "지금"은 이렇게 얻습니다. 이 값은 MES 마지막 종료 시각과
+정확히 같습니다.
+
+```sql
+(SELECT MAX(inspection_datetime) FROM qms_inspection)
+```
+
+날짜 컬럼(`due_date`, `closed_date` 등)과 비교할 때는 `CAST(... AS DATE)`로 자르세요.
+자르지 않으면 기한이 오늘까지인 건이 이미 지난 것으로 셉니다.
+
+`current_date()`를 쓰면 **미종결 부적합 72건이 전부** 기한 초과로 나옵니다. 실제로는
+**14건**입니다. 아직 오지 않은 조치 기한 68건과 유효성 점검 예정 77건도 **전부 0**이
+됩니다. 오차가 아니라 시나리오 자체가 사라집니다.
+
 **이미 일어난 일은 전부 "지금" 이하입니다.**
 `inspection_datetime`, `measured_at`, `receipt_date`, `inspection_date`,
 `detected_date`, `closed_date`, `decision_date`
@@ -278,7 +293,7 @@ MES의 상위 불량코드 6종을 QMS가 원인·조치 단위로 4단계씩 �
 
 여기서 나오는 질문들입니다.
 
-- "기한이 지났는데 아직 종결 안 된 부적합" → `due_date < 지금 AND closed_date IS NULL`
+- "기한이 지났는데 아직 종결 안 된 부적합" → `due_date < CAST(지금 AS DATE) AND closed_date IS NULL` (14건)
 - "출하검사 대기 로트" → MES에서 아직 Done이 아닌 로트. `qms_inspection`에 OQC가 없습니다
 - "최근 검사 결과" → 가장 늦은 `inspection_datetime` 부근. 그보다 뒤의 데이터는 없습니다
 
@@ -401,6 +416,45 @@ MES 불량 35건 → on mes_defect_code 140행 (4.00배)
 ```
 
 MES 불량과 QMS 부적합을 잇고 싶으면 `qms_nonconformance.mes_defect_code` 를 쓰세요. 실제로 발생한 건만 들어 있어 증폭이 없습니다. `qms_defect_code` 는 코드 마스터일 뿐입니다.
+
+### 부적합의 절반은 검사에 걸려 있지 않습니다
+
+지금까지의 경고는 전부 행이 **늘어나는** 것이었습니다. 이것은 반대입니다. 조용히
+**줄어듭니다.**
+
+`qms_nonconformance` 95건은 네 경로에서 옵니다. `inspection_id` 가 채워지는 것은 그중
+둘뿐입니다.
+
+| `ncr_source` | 건수 | 잇는 키 |
+|---|---|---|
+| 공정검사 | 43 | `inspection_id` |
+| 입고검사 | 40 | `iqc_id` (`inspection_id` 는 NULL) |
+| 출하검사 | 6 | `inspection_id` |
+| 고객제기 | 6 | 없음 (검사에서 나온 게 아닙니다) |
+
+그래서 `qms_inspection` 을 거쳐 부적합을 세면 **95건 중 49건(52%)만** 보입니다.
+추정 비용은 21.8억 중 **10.3억이 사라집니다.**
+
+```sql
+-- 나쁨: 46건이 조용히 빠진다
+SELECT COUNT(*) FROM qms_inspection i JOIN qms_nonconformance n
+  ON n.inspection_id = i.inspection_id;        -- 49
+
+-- 좋음: 부적합을 셀 때는 부적합 테이블을 센다
+SELECT COUNT(*) FROM qms_nonconformance;       -- 95
+```
+
+행이 늘어나면 합계가 이상해져서 알아챌 여지라도 있지만, 줄어들면 **그냥 더 작은
+숫자**가 나옵니다. 52%는 틀렸다고 느껴지지 않습니다.
+
+`qms_nonconformance` 는 `lot_id` · `step_code` · `eqp_id` · `material_code` 를 자기
+행에 갖고 있습니다. **부적합을 세거나 묶을 때 검사 테이블을 거칠 이유가 없습니다.**
+검사의 판정이나 검사원이 필요할 때만 `inspection_id` 로 잇고, 그때는 46건이 빠지는
+것이 정상임을 알고 쓰세요.
+
+한편 `qms_inspection` → `qms_nonconformance` → `qms_disposition` 자체는 안전합니다.
+한 검사에 부적합은 최대 1건, 한 부적합에 처리 결정은 정확히 1건이라 이 사슬은
+행을 늘리지 않습니다.
 
 ### 검사에는 `spec_id` 가 없습니다
 
