@@ -130,15 +130,80 @@ def test_a_wrong_judgment_carries_no_unit_clue_that_would_reveal_it(tables):
 
 
 def test_specs_not_copied_into_measurement_still_need_a_join(tables):
-    """조인을 아예 없애지는 않았다는 것을 고정한다.
+    """문서의 목록이 실제 미복제 컬럼 집합과 정확히 같은지 본다.
 
-    판정 네 값만 복제했다. 전부 복제하면 계측 테이블이 커지기만 하고 참가자가
-    조인을 한 번도 안 해보게 된다. 조인이 필요한 질문이 남아 있어야 복합키를
-    쓰는 연습이 된다.
+    처음에는 cpk_target 과 sampling_method 두 개만 확인했다. 열한 개 중 아홉은
+    문서에서 지워도 통과했다. 하필 확인하던 것을 지운 돌연변이만 잡혔던 것이다.
+
+    양방향으로 막는다. 목록에서 빠지면 안내가 불완전해지고, 반대로 그 컬럼을
+    계측에 복제해 버리면 "조인해야 한다"가 거짓이 된다. 한쪽만 보면 나머지를
+    놓친다.
     """
-    spec_only = set(tables["qms_inspection_spec"][0]) - set(tables["qms_measurement"][0])
-    assert "cpk_target" in spec_only, "Cpk 목표까지 복제하면 조인할 이유가 사라집니다"
-    assert "sampling_method" in spec_only
+    text = AGENT_DOC.read_text(encoding="utf-8")
+    block = re.search(r"<!-- 조인필요:시작 -->(.*?)<!-- 조인필요:끝 -->", text, re.S)
+    assert block, "조인 필요 목록 문단이 없습니다"
+
+    documented = set(re.findall(r"`(\w+)`", block.group(1)))
+    actual = set(tables["qms_inspection_spec"][0]) - set(tables["qms_measurement"][0])
+    assert documented == actual, (
+        f"문서에만 {documented - actual} · 데이터에만 {actual - documented}"
+    )
+    assert "cpk_target" in actual, "Cpk 목표까지 복제하면 조인할 이유가 사라집니다"
+
+
+def test_the_copied_columns_are_exactly_what_a_judgment_needs(tables):
+    """복제 범위가 판정에 필요한 것에서 늘어나지 않았는지 본다.
+
+    복제가 늘면 계측 테이블만 커지고 참가자가 복합키를 한 번도 안 써보게 된다.
+    줄면 판정에 조인이 필요해져 잘못된 키를 고를 기회가 생긴다. 양쪽 다 막는다.
+    """
+    copied = set(tables["qms_inspection_spec"][0]) & set(tables["qms_measurement"][0])
+    assert copied == {
+        "spec_id",
+        "product_code",
+        "step_code",
+        "characteristic_code",
+        "characteristic_name_ko",
+        "unit",
+        "target_value",
+        "lsl",
+        "usl",
+    }
+
+
+def test_most_amplification_never_flips_a_judgment(tables):
+    """판정을 안 뒤집는 부풀림이 얼마나 되는지 고정한다.
+
+    FDC 쪽에서 환경 센서가 부풀림의 91% 를 내면서 판정은 하나도 안 뒤집는 것을
+    찾았다. 여기도 89% 다. 규격이 같으니 is_out_of_spec 이 그대로고, 불합격
+    건수가 정확한 채로 분모만 늘어난다. 판정이 뒤집히면 들여다볼 여지라도
+    있지만 이건 아무도 이상하다고 느끼지 않는다.
+
+    CD 가 위험한 게 아니라 잘못된 조인 자체가 위험하다는 근거다. 이 비율이
+    낮아지면 문서의 표도 함께 손봐야 한다.
+    """
+    by_char = defaultdict(list)
+    for spec in tables["qms_inspection_spec"]:
+        by_char[spec["characteristic_code"]].append(spec)
+
+    amplified = Counter()
+    flipped = Counter()
+    for row in tables["qms_measurement"]:
+        code = row["characteristic_code"]
+        for spec in by_char[code]:
+            amplified[code] += 1
+            if spec["spec_id"] == row["spec_id"]:
+                continue
+            if (not spec["lsl"] <= row["measured_value"] <= spec["usl"]) != row["is_out_of_spec"]:
+                flipped[code] += 1
+
+    silent = sum(n for code, n in amplified.items() if not flipped[code])
+    total = sum(amplified.values())
+    assert silent / total > 0.5, (
+        f"판정을 안 뒤집는 부풀림이 {silent / total:.0%} 뿐이라면 "
+        "위험이 판정 왜곡에 몰린 것이므로 문서의 성격 구분을 다시 보세요"
+    )
+    assert flipped, "뒤집히는 특성이 하나도 없으면 경고 수위를 낮춰야 합니다"
 
 
 def test_the_same_characteristic_has_different_targets_per_product(tables):
@@ -221,6 +286,7 @@ def test_agent_doc_warns_about_every_dangerous_join():
 
     assert "100%" in section, "뒤집힘 중 눈먼 비율이 적혀 있어야 합니다"
     assert "`cpk_target`" in section, "조인이 필요한 질문의 예가 있어야 합니다"
+    assert "89%" in section, "판정을 안 뒤집는 부풀림 비율이 적혀 있어야 합니다"
 
 
 def test_documented_amplification_matches_the_data(tables):
