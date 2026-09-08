@@ -135,10 +135,13 @@ SCHEMA = "src/fdc_schema.py"
 DOC = "data-agent-schema.md"
 BUILD = "build_notebook.py"
 README = "README.md"
+GEN = "src/fdc_generator.py"
+ANOM = "src/fdc_anomaly.py"
 
 DOC_TESTS = "tests/test_data_agent_schema.py"
 NB_TESTS = "tests/test_notebook_execution.py"
 SCHEMA_TESTS = "tests/test_fdc_schema.py"
+GEN_TESTS = "tests/test_fdc_generator.py"
 
 _BLAME = """
 import sys; sys.path.insert(0, '.')
@@ -176,6 +179,24 @@ r = {c for c, _ in READING_SCHEMA}
 print('조인 필요 컬럼', len([c for c, _ in SPEC_SCHEMA if c not in r]), '개')
 """
 
+_DAYCYCLE = """
+import sys, json
+sys.path.insert(0, '.'); sys.path.insert(0, 'tests')
+from datetime import timedelta
+from test_fdc_generator import _shifted_facts, _generate
+from src.fdc_anomaly import build_profiles, hinted_sensors
+base = _generate(_shifted_facts(timedelta(0)))
+facts = _shifted_facts(timedelta(0)); profs = build_profiles(facts)
+whole = _generate(_shifted_facts(timedelta(hours=24 * 11)))
+odd = _generate(_shifted_facts(timedelta(hours=37)))
+d_whole = sum(1 for a, b in zip(base, whole) if a['value'] != b['value'])
+d_odd = sum(1 for a, b in zip(base, odd) if a['value'] != b['value'])
+free = [r for r in base if r['sensor_code'] not in hinted_sensors(profs[r['eqp_id']])]
+print(f"정수일수 값차이 {d_whole:,} (원래 0) · 비정수 {d_odd:,} (원래 102,540) · "
+      f"무지목 Alarm {sum(1 for r in free if r['status'] == 'Alarm')} (원래 0) · "
+      f"무지목 Warning {sum(1 for r in free if r['status'] == 'Warning')} (원래 2)")
+"""
+
 GROUPS: dict[str, list[Mutant]] = {
     "join": [
         Mutant(
@@ -203,7 +224,7 @@ GROUPS: dict[str, list[Mutant]] = {
         Mutant(
             "기여도 표에서 CHAMBER_TEMP 줄 삭제",
             DOC,
-            "| `CHAMBER_TEMP` | 3 | 19,098 | **19,088** | ❌ 셋 다 `degC` |\n",
+            "| `CHAMBER_TEMP` | 3 | 19,098 | **19,090** | ❌ 셋 다 `degC` |\n",
             "",
             DOC_TESTS,
         ),
@@ -285,6 +306,48 @@ GROUPS: dict[str, list[Mutant]] = {
             "-p mesAnchor=",
             "-p other=",
             SCHEMA_TESTS,
+        ),
+    ],
+    "daycycle": [
+        # 원래 있던 결함을 되돌린다. 잡음 시드가 절대 시각이면 하루의 정수배를
+        # 옮겨도 10만 행이 전부 달라져 diurnal 이 물리라는 근거가 사라진다.
+        Mutant(
+            "잡음 시드를 절대 시각으로 되돌리기",
+            GEN,
+            "offset = int(moment.timestamp()) - int(anchor.timestamp())",
+            "offset = int(moment.timestamp())",
+            GEN_TESTS,
+            _DAYCYCLE,
+        ),
+        Mutant(
+            "환경 성분을 죽이기",
+            GEN,
+            "return sensor.diurnal_amp * math.sin(",
+            "return 0.0 * math.sin(",
+            GEN_TESTS,
+            _DAYCYCLE,
+        ),
+        Mutant(
+            "이탈을 지목 밖 센서까지 걸기",
+            ANOM,
+            "if sensor_code != run_sensor(run, profile.eqp_type):",
+            "if False:",
+            GEN_TESTS,
+            _DAYCYCLE,
+        ),
+        Mutant(
+            "표의 정수일수 칸만 손대기",
+            README,
+            "| 원본과 값이 다른 행 | — | **102,540** | **0** | **0** |",
+            "| 원본과 값이 다른 행 | — | **102,540** | **0** | **7** |",
+            GEN_TESTS,
+        ),
+        Mutant(
+            "표의 마지막 Alarm 칸만 손대기",
+            README,
+            "| **Alarm 행** | **294** | **257** | **294** | **294** |",
+            "| **Alarm 행** | **294** | **257** | **294** | **281** |",
+            GEN_TESTS,
         ),
     ],
 }

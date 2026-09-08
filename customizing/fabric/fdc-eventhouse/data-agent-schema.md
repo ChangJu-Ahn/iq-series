@@ -151,7 +151,7 @@ fdc_sensor_reading
 |---|---|---|---|---|
 | `AMBIENT_TEMP` | 7 | 121,236 | 0 | — (범위가 같음) |
 | `AMBIENT_HUMIDITY` | 7 | 121,236 | 0 | — (범위가 같음) |
-| `CHAMBER_TEMP` | 3 | 19,098 | **19,088** | ❌ 셋 다 `degC` |
+| `CHAMBER_TEMP` | 3 | 19,098 | **19,090** | ❌ 셋 다 `degC` |
 | `CHAMBER_PRESSURE` | 2 | 5,336 | **5,336** | ✅ `Torr` vs `mTorr` |
 
 환경 센서는 설비 유형이 달라도 한계치가 같아 **집계만 망가뜨립니다.** 판정은 그대로라

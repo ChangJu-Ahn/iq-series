@@ -1,3 +1,4 @@
+import math
 import subprocess
 import sys
 from collections import Counter
@@ -68,7 +69,9 @@ def test_grid_is_anchored_to_epoch_not_to_start():
 def test_reading_value_is_deterministic(profiles):
     profile = profiles["EQP-DIFF01"]
     sensor = sensor_by_code(profile.eqp_type, "CHAMBER_TEMP")
-    values = {reading_value(sensor, profile.eqp_id, T0, profile) for _ in range(5)}
+    values = {
+        reading_value(sensor, profile.eqp_id, T0, profile, anchor=T0) for _ in range(5)
+    }
     assert len(values) == 1
 
 
@@ -80,11 +83,13 @@ def test_reading_value_stable_across_processes():
         "from src.mes_probe import MesFacts; "
         "from src.fdc_anomaly import build_profiles; "
         "from src.fdc_generator import reading_value; "
+        "from src.fdc_runs import span; "
         "from src.fdc_sensors import sensor_by_code; "
         "f = MesFacts.from_dict(json.load(open('tests/fixtures/mes_facts.json'))); "
         "p = build_profiles(f)['EQP-DIFF01']; "
         "s = sensor_by_code(p.eqp_type, 'CHAMBER_TEMP'); "
-        "print(reading_value(s, p.eqp_id, datetime(2026,9,4,12,0,tzinfo=timezone.utc), p))"
+        "print(reading_value(s, p.eqp_id, datetime(2026,9,4,12,0,tzinfo=timezone.utc), p,"
+        " anchor=span(f)[1]))"
     )
     outs = {
         subprocess.run(
@@ -187,12 +192,57 @@ def test_majority_of_readings_are_normal(day_rows):
 
 
 def test_unhinted_sensors_never_alarm(day_rows, profiles):
-    """지목받지 않은 센서는 잡음만으로 경보를 내면 안 된다."""
+    """지목받지 않은 센서는 잡음만으로 경보를 내면 안 된다.
+
+    경보만 금지한다. 이전에는 `!= NORMAL` 로 검사해 주의까지 막았는데,
+    그것은 지킬 수 없는 약속이었다. 경보 한계는 어느 센서든 10σ 밖이라
+    잡음으로 닿지 않지만 정상범위는 4.17~10σ 라서 주의는 확률적으로 나온다.
+    `RETICLE_TEMP` 는 10만 표본에 3건이 기대값이다.
+
+    통과하고 있었던 것은 잡음 시드가 절대 시각이던 시절의 우연이다. 시드를
+    앵커 상대로 바꾸자마자 `GAS_FLOW` 가 주의를 냈다. 이름은 never_alarm
+    인데 내용이 주의까지 막고 있었던 것을 그때 알았다.
+    """
     for row in day_rows:
-        if row["status"] == NORMAL:
+        if row["status"] != ALARM:
             continue
         hinted = hinted_sensors(profiles[row["eqp_id"]])
-        assert row["sensor_code"] in hinted, (row["eqp_id"], row["sensor_code"], row["status"])
+        assert row["sensor_code"] in hinted, (row["eqp_id"], row["sensor_code"])
+
+
+def test_unhinted_warnings_stay_at_the_noise_floor(day_rows, profiles):
+    """무지목 주의는 나되 잡음이 낼 수 있는 만큼만 나야 한다.
+
+    개수를 상수로 박으면 시드가 바뀔 때마다 갱신하게 된다. 정규분포에서
+    직접 기대값을 구해 대조한다. σ 나 정상범위를 조정하면 기대값이 따라
+    움직이므로 이 검사는 낡지 않는다.
+
+    상한이 기대값의 8배인 것은 건수가 한 자리라 포아송 요동이 크기
+    때문이다. 진짜로 막으려는 것은 자릿수가 다른 이탈 — 이탈 주입이 엉뚱한
+    센서에 걸리면 수백 건이 된다.
+    """
+    hinted_by_eqp = {eqp: hinted_sensors(p) for eqp, p in profiles.items()}
+    expected = 0.0
+    seen = 0
+    for row in day_rows:
+        if row["sensor_code"] in hinted_by_eqp[row["eqp_id"]]:
+            continue
+        seen += 1
+        sensor = sensor_by_code(row["eqp_type"], row["sensor_code"])
+        half = (sensor.normal_max - sensor.normal_min) / 2
+        expected += math.erfc(half / sensor.sigma / math.sqrt(2))
+
+    actual = sum(
+        1
+        for row in day_rows
+        if row["status"] == WARNING
+        and row["sensor_code"] not in hinted_by_eqp[row["eqp_id"]]
+    )
+    assert seen, "무지목 판독이 없으면 비교가 성립하지 않는다"
+    assert actual <= max(3.0, expected * 8), (
+        f"무지목 주의 {actual}건은 잡음 기대 {expected:.2f}건(표본 {seen:,})으로"
+        " 설명되지 않는다. 이탈이 지목 밖 센서로 새는지 보라"
+    )
 
 
 def test_worst_equipment_has_more_alarms_than_best(day_rows, profiles):
@@ -408,16 +458,16 @@ def _generate(facts):
 
 
 def test_moving_the_anchor_keeps_the_shape_but_moves_the_alarms():
-    """앵커가 옮겨져도 골격은 같지만 경보는 달라진다.
+    """앵커가 옮겨져도 골격은 같지만 하루 주기가 어긋나면 경보가 달라진다.
 
     참가자 20명이 각자 노트북을 돌린다. MES 앵커가 고정돼 있지 않으면 각자
     다른 시각에 다른 앵커를 받는다. 그때 무엇이 같고 무엇이 다른지가
     README 의 "앵커 고정은 선택이 아니다" 주장을 떠받친다.
 
-    골격이 같은 이유는 런 구조가 MES 에서 오기 때문이다. 경보가 달라지는
-    이유는 환경 성분이 하루 주기라서다 — 밤 공정이 새벽 공정이 되면 기저가
-    이동해 임계를 넘나드는 지점이 바뀐다. 물리적으로는 맞는 동작이라 고칠
-    것이 아니라 앵커를 고정해야 한다.
+    남은 앵커 의존은 `diurnal` 하나뿐이라 **하루의 정수배 이동에는 값이 한
+    행도 안 변한다.** 그것이 이 의존이 물리라는 증거다 — 같은 시각에 도는
+    공정은 같은 환경을 본다. 잡음까지 앵커에 묶여 있던 시절에는 정수 일수를
+    옮겨도 10만 행이 전부 달라졌고, 그때는 이 구분이 불가능했다.
 
     이 테스트가 실패하면 README 의 경고를 지워야 한다는 신호다.
     """
@@ -431,10 +481,8 @@ def test_moving_the_anchor_keeps_the_shape_but_moves_the_alarms():
     }
     assert base_alarm_pairs, "원본에 경보가 없으면 비교가 성립하지 않는다"
 
-    moved_alarm_sets = []
-    for hours in (37, 24 * 11):
+    def moved_rows(hours):
         moved = _generate(_shifted_facts(timedelta(hours=hours)))
-
         assert len(moved) == len(base), (
             f"{hours}시간 옮겼더니 행 수가 {len(base):,} → {len(moved):,} 로 변했다."
             " 런 구조는 MES 에서 오므로 평행이동에 영향받지 않아야 한다"
@@ -442,17 +490,29 @@ def test_moving_the_anchor_keeps_the_shape_but_moves_the_alarms():
         assert Counter(row["run_status"] for row in moved) == base_runs, (
             "가동/유휴 배치가 변했다. MES 런 구간이 그대로인데 달라질 수 없다"
         )
-        moved_alarm_sets.append(
-            {
-                (row["eqp_id"], row.get("lot_id"))
-                for row in moved
-                if row["status"] == "Alarm"
-            }
+        return moved
+
+    for whole_days in (11, 30):
+        moved = moved_rows(24 * whole_days)
+        differing = sum(1 for a, b in zip(base, moved) if a["value"] != b["value"])
+        assert differing == 0, (
+            f"{whole_days}일은 하루의 정수배라 판독값이 한 행도 달라지면 안 되는데"
+            f" {differing:,}행이 달라졌다. 잡음이나 이탈이 절대 시각에 묶여 있는지 보라"
         )
 
-    assert any(pairs != base_alarm_pairs for pairs in moved_alarm_sets), (
-        "앵커를 옮겨도 경보 설비가 그대로라면 README 의 '참가자마다 경보 설비가"
-        " 달라진다' 경고가 근거를 잃는다. 데이터를 고칠 게 아니라 경고를 지워야 한다"
+    off_grid = [moved_rows(hours) for hours in (1, 37)]
+    assert all(
+        sum(1 for a, b in zip(base, moved) if a["value"] != b["value"]) > len(base) // 2
+        for moved in off_grid
+    ), "하루 주기가 어긋났는데 값이 그대로면 환경 성분이 죽은 것이다"
+
+    assert any(
+        {(row["eqp_id"], row.get("lot_id")) for row in moved if row["status"] == "Alarm"}
+        != base_alarm_pairs
+        for moved in off_grid
+    ), (
+        "앵커를 어긋나게 옮겨도 경보 설비가 그대로라면 README 의 '참가자마다 경보"
+        " 설비가 달라진다' 경고가 근거를 잃는다. 데이터가 아니라 경고를 지워야 한다"
     )
 
 
@@ -480,18 +540,45 @@ def test_readme_alarm_drift_numbers_are_measured():
         line = next(ln for ln in section.splitlines() if ln.strip().startswith(f"| {label}"))
         return line, [c.strip() for c in line.strip().strip("|").split("|")][1:]
 
-    # 골격 두 줄은 평행이동해도 안 변하므로 세 칸이 전부 같은 값이어야 한다.
+    # 골격 두 줄은 평행이동해도 안 변하므로 네 칸이 전부 같은 값이어야 한다.
     # 집합 포함으로 검사하면 한 칸만 틀려도 나머지가 통과시킨다.
     for label, value in (("판독 행", len(base)), ("Run / Idle", runs["Run"])):
         line, got = cells(label)
-        assert len(got) == 3, f"'{label}' 칸 수가 달라졌다: {line.strip()}"
+        assert len(got) == 4, f"'{label}' 칸 수가 달라졌다: {line.strip()}"
         for index, cell in enumerate(got):
             numbers = {int(n.replace(",", "")) for n in re.findall(r"\b\d[\d,]*\b", cell)}
             assert value in numbers, (
                 f"'{label}' {index + 1}번째 칸이 실측 {value:,} 과 다르다: {cell}"
             )
 
-    line, got = cells("**Alarm 행**")
-    alarms = sum(1 for row in base if row["status"] == "Alarm")
-    numbers = {int(n.replace(",", "")) for n in re.findall(r"\b\d[\d,]*\b", got[0])}
-    assert alarms in numbers, f"Alarm 실측 {alarms:,} 이 첫 칸과 다르다: {got[0]}"
+    def alarms_of(rows):
+        return sum(1 for row in rows if row["status"] == "Alarm")
+
+    def only_number(cell):
+        found = {int(n.replace(",", "")) for n in re.findall(r"\b\d[\d,]*\b", cell)}
+        assert len(found) == 1, f"칸에 숫자가 하나여야 대조가 성립한다: {cell}"
+        return found.pop()
+
+    # 네 칸을 전부 실측한다. 첫 칸만 보면 나머지 셋은 손으로 적은 채 낡는다.
+    shifts = (0, 37, 24 * 11, 24 * 30)
+    moved = [base] + [_generate(_shifted_facts(timedelta(hours=h))) for h in shifts[1:]]
+
+    _, alarm_cells = cells("**Alarm 행**")
+    assert len(alarm_cells) == 4, "Alarm 행 칸 수가 표 머리와 다르다"
+    for index, (cell, rows) in enumerate(zip(alarm_cells, moved)):
+        assert only_number(cell) == alarms_of(rows), (
+            f"Alarm {index + 1}번째 칸이 +{shifts[index]}시간 실측"
+            f" {alarms_of(rows):,} 과 다르다: {cell}"
+        )
+
+    _, diff_cells = cells("원본과 값이 다른 행")
+    assert len(diff_cells) == 4, "값 차이 행 칸 수가 표 머리와 다르다"
+    assert not re.search(r"\d", diff_cells[0]), (
+        f"원본 칸은 자기 자신과 비교할 수 없으므로 숫자가 없어야 한다: {diff_cells[0]}"
+    )
+    for index, (cell, rows) in enumerate(zip(diff_cells[1:], moved[1:]), start=1):
+        actual = sum(1 for a, b in zip(base, rows) if a["value"] != b["value"])
+        assert only_number(cell) == actual, (
+            f"값 차이 {index + 1}번째 칸이 +{shifts[index]}시간 실측"
+            f" {actual:,} 과 다르다: {cell}"
+        )

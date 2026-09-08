@@ -30,7 +30,7 @@ from src.fdc_anomaly import (
     run_excursion,
     seed,
 )
-from src.fdc_runs import Run, run_at, runs_by_equipment
+from src.fdc_runs import Run, run_at, runs_by_equipment, span
 from src.fdc_sensors import (
     SAMPLE_INTERVAL_SEC,
     SensorDef,
@@ -85,9 +85,20 @@ def diurnal(sensor: SensorDef, eqp_id: str, moment: datetime) -> float:
     return sensor.diurnal_amp * math.sin(2 * math.pi * seconds_of_day / 86400 + phase)
 
 
-def noise(sensor: SensorDef, eqp_id: str, moment: datetime) -> float:
-    """가우시안 잡음. 타임스탬프마다 고정이다."""
-    rng = random.Random(seed(eqp_id, sensor.sensor_code, int(moment.timestamp())))
+def noise(sensor: SensorDef, eqp_id: str, moment: datetime, anchor: datetime) -> float:
+    """가우시안 잡음. 앵커로부터 떨어진 거리마다 고정이다.
+
+    절대 시각을 시드로 쓰면 앵커가 움직일 때 판독값이 통째로 달라진다.
+    잡음은 재현성 장치지 물리가 아니므로 그래야 할 이유가 없다. 앵커
+    상대로 두면 MES 가 시간축을 옮겨도 같은 공정의 같은 지점은 같은 값을
+    낸다. `anchor` 에 기본값을 두지 않는 이유는 빠뜨렸을 때 조용히 옛
+    동작으로 돌아가지 않게 하려는 것이다.
+
+    남는 앵커 의존은 `diurnal` 하나인데 그것은 고칠 것이 아니다. 밤에 돌린
+    공정과 새벽에 돌린 공정의 환경이 같을 수 없다.
+    """
+    offset = int(moment.timestamp()) - int(anchor.timestamp())
+    rng = random.Random(seed(eqp_id, sensor.sensor_code, offset))
     return rng.gauss(0.0, sensor.sigma)
 
 
@@ -114,11 +125,13 @@ def reading_value(
     moment: datetime,
     profile: EquipmentProfile,
     run: Run | None = None,
+    *,
+    anchor: datetime,
 ) -> float:
     value = (
         sensor.base
         + diurnal(sensor, eqp_id, moment)
-        + noise(sensor, eqp_id, moment)
+        + noise(sensor, eqp_id, moment, anchor)
         + excursion_offset(sensor, run, moment, profile)
     )
     return round(value, 4)
@@ -150,6 +163,7 @@ def build_readings(facts, start: datetime, end: datetime) -> list[dict]:
     all_runs = runs_by_equipment(facts)
     moments = grid_timestamps(start, end)
     idle = idle_sensors()
+    anchor = span(facts)[1]
     rows: list[dict] = []
 
     for profile in profiles.values():
@@ -164,7 +178,9 @@ def build_readings(facts, start: datetime, end: datetime) -> list[dict]:
             else:
                 continue
             for sensor in active:
-                value = reading_value(sensor, profile.eqp_id, moment, profile, run)
+                value = reading_value(
+                    sensor, profile.eqp_id, moment, profile, run, anchor=anchor
+                )
                 rows.append(
                     {
                         "reading_ts": moment,
