@@ -248,3 +248,34 @@ def test_readme_ddl_matches_the_schema():
     readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
     for name, ddl in TABLE_DDL.items():
         assert ddl in readme, f"README 의 {name} DDL 이 스키마와 다릅니다"
+
+
+def test_readme_recovery_drops_every_table_the_notebook_writes():
+    """앵커가 움직였을 때 README 는 어긋난 테이블을 비우라고 안내한다.
+
+    노트북이 쓰는 테이블 중 하나라도 빠뜨리면 참가자가 절반만 지운다. 그러면
+    남은 테이블에 옛 시간축이 그대로 있고, 다시 적재해도 두 시간축이 섞인
+    상태가 유지된다. 증상이 사라지지 않으니 재배포가 안 먹혔다고 여긴다.
+
+    README **전체**에서 문자열을 찾으면 안 된다. `.drop table` 은 개발 절과
+    한계 절에도 나와서 네 번 등장한다. 앵커 절에서 통째로 지워도 다른
+    세 곳이 통과시킨다 -- 처음 쓴 판이 정확히 그랬고, 돌연변이 둘이 모두
+    빠져나갔다. 해당 절만 잘라 검사한다.
+    """
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+
+    marker = "### ⚠️ MES를 앵커 없이 배포하면"
+    assert marker in readme, "앵커 드리프트 절이 README 에서 사라졌습니다"
+    start = readme.index(marker)
+    end = readme.index("### ", start + len(marker))
+    section = readme[start:end]
+
+    for name in TABLE_DDL:
+        assert f".drop table {name}\n" in section, (
+            f"앵커 절이 {name} 을 비우라고 안내하지 않습니다."
+            " 절반만 지우면 옛 시간축이 남아 증상이 그대로입니다."
+        )
+
+    assert "mesAnchor" in section, (
+        "앵커를 명시해 재배포하는 방법이 없으면 참가자가 같은 자리를 다시 밟습니다"
+    )
