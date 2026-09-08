@@ -1,6 +1,7 @@
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -67,7 +68,11 @@ def test_seed_is_stable_across_processes():
     )
     outs = {
         subprocess.run(
-            [sys.executable, "-c", code], capture_output=True, text=True, check=True
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=Path(__file__).resolve().parent.parent,
         ).stdout.strip()
         for _ in range(3)
     }
