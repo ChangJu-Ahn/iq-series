@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+import math
 import os
 import time
+from collections import Counter
 
 import pytest
 
@@ -35,6 +37,41 @@ COMPLETED_COLUMNS = [
 SHIFT = dt.timedelta(days=27)
 
 TIMEZONES = ["UTC", "Asia/Seoul", "America/Los_Angeles", "Europe/Berlin", "Asia/Kolkata"]
+
+# 근무조 한 조의 길이. 정기 검사가 이 안에서만 시각을 고르므로 후보 공간을
+# 실제 관측 폭보다 좁게 잡는 근거가 된다. 좁게 잡을수록 충돌 기대값이 커지고
+# 한계치가 느슨해지므로, 틀리더라도 뭉침을 놓치는 쪽이 아니라 우연한 충돌을
+# 너그럽게 보는 쪽으로 틀린다.
+_SHIFT_HOURS = 8
+
+
+def _minute_slots(values: list[dt.datetime]) -> int:
+    """검사 시각이 놓일 수 있는 분 단위 자리의 수.
+
+    실제 후보 집합을 생성 코드에서 가져오면 돌연변이가 생성과 검증 양쪽에
+    걸려 상쇄된다. 관측된 날짜 수만 세어 밖에서 다시 만든다.
+    """
+    days = len({value.date() for value in values})
+    return max(days * _SHIFT_HOURS * 60, 1)
+
+
+def _coincidence_limit(count: int, slots: int) -> int:
+    """우연만으로 한 시각에 몰릴 수 있는 건수의 상한.
+
+    자리마다 평균 count/slots 건이 떨어지는 포아송으로 본다. 자리가 slots 개
+    이므로 어딘가에서 k 건 이상이 겹칠 확률은 slots * P(X >= k) 로 어림한다.
+    그 값이 1% 아래로 떨어지는 첫 k 를 한계로 삼는다. 검사 건수나 구간 폭이
+    달라지면 한계도 따라 움직이므로 숫자를 박아 두는 것보다 오래 간다.
+
+    하한은 3이다. 두 건이 겹치는 것은 실제로 일어난다 — 앵커를 13시간 옮기면
+    PCS 36건에서 바로 나온다. 한계가 2면 그 우연에 깨진다.
+    """
+    lam = count / slots
+    for k in range(3, count + 1):
+        tail = 1.0 - sum(lam**i * math.exp(-lam) / math.factorial(i) for i in range(k))
+        if slots * tail < 0.01:
+            return k
+    return count
 
 
 def timestamp_columns() -> dict[str, list[str]]:
@@ -326,16 +363,93 @@ def test_lots_still_in_production_have_no_shipping_inspection(snapshot):
     assert pending and not (inspected & pending)
 
 
-def test_periodic_inspections_do_not_pile_on_the_window_edges(snapshot):
-    """정기 검사가 구간 경계 한 시각에 뭉치지 않는지.
+@pytest.mark.parametrize(
+    "delta",
+    [dt.timedelta(0), dt.timedelta(hours=13), dt.timedelta(hours=37), SHIFT],
+    ids=["원본", "13시간", "37시간", "27일"],
+)
+def test_inspections_do_not_pile_on_a_single_moment(snapshot, delta):
+    """검사 시각이 한 지점에 무더기로 쌓이지 않는지.
 
     범위를 벗어난 값을 양끝으로 자르면 잘린 행이 경계 시각 하나에 그대로
     쌓인다. 적재는 성공하고 분포만 망가지므로 눈에 잘 띄지 않는다.
+
+    이 테스트는 원래 `len(set(values)) == len(values)` 로 완전 무충돌을
+    요구했다. 지킬 수 없는 약속이었다. 검사 시각은 근무조 안의 분 단위
+    격자에서 고르므로 후보가 유한하고, 생일 문제로 충돌이 확률적으로 난다.
+    PCS 36건이 1,440개 후보에서 무충돌일 확률은 64% 뿐이다 — 세 번에 한 번
+    실패한다. 실제로 앵커를 13시간 옮기면 충돌이 하나 생긴다.
+
+    앵커를 함께 옮긴다. 원본 하나만 보면 그 표본이 우연히 깨끗한 것을
+    성질로 착각한다. 원래 이 테스트가 PCS·EQV 만, 그것도 원본만 보다가
+    IPQC 와 IPQC-RT 5건이 앵커 시각에 쌓여 있는 것을 3라운드 동안 놓쳤다.
+
+    우연한 충돌과 뭉침은 규모가 다르다. 우연은 한 시각에 2건이고, 자르기는
+    34건을 한 시각에 쌓는다. 한계치는 포아송 근사로 유도하므로 검사 건수나
+    구간 폭이 바뀌어도 따라 움직인다.
+    """
+    rows = build_all_tables(shifted_snapshot(snapshot, delta))["qms_inspection"]
+    for kind in ("IPQC", "IPQC-RT", "OQC", "PCS", "EQV"):
+        values = [r["inspection_datetime"] for r in rows if r["inspection_type"] == kind]
+        assert values, f"{kind} 검사가 하나도 없습니다"
+        limit = _coincidence_limit(len(values), _minute_slots(values))
+        heaviest = Counter(values).most_common(1)[0]
+        assert heaviest[1] <= limit, (
+            f"{kind} 의 {heaviest[0]} 에 {heaviest[1]}건이 몰렸습니다"
+            f" (우연으로 설명되는 한계 {limit}건)"
+        )
+
+
+@pytest.mark.parametrize(
+    "delta",
+    [dt.timedelta(0), dt.timedelta(hours=13), dt.timedelta(hours=37), SHIFT],
+    ids=["원본", "13시간", "37시간", "27일"],
+)
+def test_no_inspection_is_clamped_onto_the_anchor(snapshot, delta):
+    """앵커 시각의 검사는 그 공정이 앵커에 끝났을 때만 있어야 한다.
+
+    미래를 막으려고 앵커로 자르면 잘린 것들이 앵커 한 점에 쌓인다. 그런데
+    앵커에 놓인 검사가 전부 잘린 것은 아니다. 앵커는 마지막 공정 종료
+    시각이므로 그 공정의 검사는 정당하게 앵커에 놓일 수 있다.
+
+    둘을 가르는 것은 유래한 공정의 종료 시각이다. 자르기는 훨씬 이른 공정의
+    검사까지 앵커로 끌어온다. 그것만 잡는다.
+
+    한 시각에 몇 건이 몰렸는지로는 이것을 못 잡는다. 자르기가 만든 뭉침이
+    세 건이었고 우연한 충돌의 한계도 세 건이라 정확히 걸쳐서 통과했다.
+    뭉친 개수가 아니라 뭉친 자리를 봐야 했다.
+
+    기대값을 MES 원시 데이터에서 직접 만든다. mes_anchor 로 만들면 앵커 유도
+    자체가 틀렸을 때 생성과 검증에 같이 걸려 상쇄된다.
+    """
+    moved = shifted_snapshot(snapshot, delta)
+    anchor = max(parse_mes_time(r["out_time"]) for r in moved.process_results)
+    ends = {r["id"]: parse_mes_time(r["out_time"]) for r in moved.process_results}
+    for row in build_all_tables(moved)["qms_inspection"]:
+        if row["inspection_datetime"] != anchor:
+            continue
+        source = row["mes_process_result_id"]
+        assert source is not None, (
+            f"{row['inspection_id']} 가 유래한 공정 없이 앵커에 놓였습니다"
+        )
+        assert ends[source] == anchor, (
+            f"{row['inspection_id']} 는 {ends[source]} 에 끝난 공정의 검사인데"
+            f" 앵커 {anchor} 로 잘려 있습니다"
+        )
+
+
+def test_the_coincidence_limit_separates_luck_from_clamping(snapshot):
+    """한계치가 우연은 통과시키고 자르기는 잡는 자리에 있어야 한다.
+
+    한계치가 너무 높으면 뭉침을 놓치고, 너무 낮으면 우연한 충돌에 깨진다.
+    실측한 두 규모 사이에 있는지 확인한다. 이것이 무너지면 위 테스트의
+    한계치 유도를 다시 봐야 한다.
     """
     rows = build_all_tables(snapshot)["qms_inspection"]
-    for kind in ("PCS", "EQV"):
+    for kind in ("IPQC", "IPQC-RT", "OQC", "PCS", "EQV"):
         values = [r["inspection_datetime"] for r in rows if r["inspection_type"] == kind]
-        assert len(set(values)) == len(values), f"{kind} 에 같은 시각이 겹칩니다"
+        limit = _coincidence_limit(len(values), _minute_slots(values))
+        assert 3 <= limit < len(values) / 2, f"{kind} 한계 {limit} 이 규모를 못 가릅니다"
 
 
 # --- 타임존 통일 -------------------------------------------------------------

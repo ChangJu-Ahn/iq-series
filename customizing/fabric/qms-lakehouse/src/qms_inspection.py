@@ -63,13 +63,29 @@ def _lot_completion(snapshot: MesSnapshot) -> dict[str, dt.datetime]:
 
 
 def _after(start: dt.datetime, minutes: int, as_of: dt.datetime) -> dt.datetime:
-    """start 로부터 minutes 뒤. 단 현재(앵커)를 넘지 않는다.
+    """start 로부터 minutes 뒤. 앵커를 넘으면 남은 시간 안으로 접는다.
 
     검사는 공정이 끝난 뒤에 하므로 시각이 앞으로 간다. 그런데 앵커 직전에 끝난
     공정은 그 뒤에 검사할 시간이 아직 없다. 자르지 않으면 판정이 채워진 검사가
     미래에 놓인다.
+
+    처음에는 앵커로 잘랐다. 그랬더니 잘린 것들이 앵커 시각 하나에 그대로
+    쌓였다 — IPQC 2건과 IPQC-RT 3건이 정확히 같은 초에 놓였고, 그것이
+    데이터에 있던 시각 중복의 전부였다. 적재도 검증도 통과한다. "가장 최근
+    검사" 를 물으면 세 건이 같은 순간에 끝난 것으로 나온다.
+
+    자르는 대신 남은 시간으로 나머지를 구해 접는다. 이미 뽑아 둔 minutes 를
+    다시 쓰므로 난수를 더 쓰지 않는다. 조건에 따라 난수를 더 쓰면 앵커가
+    움직일 때 뒤따르는 값이 통째로 밀린다 — 근무조 시각 선택에서 실제로
+    겪었고, 검사 판정까지 바뀌었다.
     """
-    return not_after(start + dt.timedelta(minutes=minutes), as_of)
+    when = start + dt.timedelta(minutes=minutes)
+    if when <= as_of:
+        return when
+    room = int((as_of - start).total_seconds() // 60)
+    if room <= 0:
+        return as_of
+    return start + dt.timedelta(minutes=minutes % (room + 1))
 
 
 def _within_window(
