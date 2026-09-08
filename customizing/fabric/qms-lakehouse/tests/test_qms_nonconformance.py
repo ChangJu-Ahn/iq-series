@@ -146,7 +146,9 @@ def test_dates_and_quantities_form_a_valid_chain(snapshot):
         if ncr["iqc_id"]:
             assert ncr["detected_date"] >= iqc_by_id[ncr["iqc_id"]]["inspection_date"]
         assert ncr["due_date"] > ncr["detected_date"]
-        assert disposition["decision_date"] > ncr["detected_date"]
+        # 검출 당일에 결정이 날 수 있다. 앵커에 가까운 부적합은 결정까지의
+        # 여유가 없어 같은 날로 잘린다. 결정이 검출보다 앞서지만 않으면 된다.
+        assert disposition["decision_date"] >= ncr["detected_date"]
         assert disposition["effectiveness_check_date"] > disposition["decision_date"]
         assert 0 < disposition["disposition_qty"] <= ncr["affected_qty"]
         if ncr["closed_date"] is not None:

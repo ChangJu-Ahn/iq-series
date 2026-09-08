@@ -13,10 +13,20 @@ from __future__ import annotations
 import datetime as dt
 import random
 
-from src.mes_client import MesSnapshot, anchor_date, parse_mes_time
+from src.mes_client import (
+    MesSnapshot,
+    mes_anchor,
+    not_after,
+    parse_mes_time,
+    window_start,
+)
 from src.qms_reference import SEED_INSPECTION
 
 INSPECTION_COUNTS = {"IPQC": 91, "IPQC-RT": 40, "OQC": 24, "PCS": 36, "EQV": 16}
+
+# 정기 검사는 주간 근무조 안에서 수행한다. 시작 시각은 검사 종류마다 다르고
+# 여기서는 그 근무조가 몇 시간짜리인지만 정한다.
+_SHIFT_LENGTH_HOURS = 8
 
 _TEAM_BY_TYPE = {
     "IPQC": "계측팀",
@@ -37,20 +47,56 @@ def mes_result_index(snapshot: MesSnapshot) -> dict[int, dict]:
     return {row["id"]: row for row in snapshot.process_results}
 
 
-def _shift_start(base_date: dt.date, days_after: int, hour: int) -> dt.datetime:
-    """앵커 날짜에서 며칠 뒤 근무조 시작 시각. 항상 tz-aware UTC 다.
+def _lot_completion(snapshot: MesSnapshot) -> dict[str, dt.datetime]:
+    """로트별 마지막 공정 종료 시각. 출하검사의 출발점이다."""
+    done: dict[str, dt.datetime] = {}
+    for row in snapshot.process_results:
+        lot_id = row.get("lot_id")
+        if not lot_id:
+            continue
+        moment = parse_mes_time(row["out_time"])
+        if lot_id not in done or moment > done[lot_id]:
+            done[lot_id] = moment
+    return done
 
-    출하검사(OQC)·공정능력조사(PCS)·설비적격성(EQV)은 특정 MES 공정이력에서
-    파생되지 않고 "생산이 끝난 뒤 근무조에 한다"는 도메인 규칙을 따른다.
-    그 규칙을 벽시계 날짜가 아니라 앵커 날짜 기준으로 표현한다.
 
-    경계: 앵커가 그 날짜의 23:59:59 일 때 간격이 가장 좁다. 그때도 가장 이른
-    항목인 OQC 가 다음 날 08:00 이라 8시간이 남는다. 어떤 앵커에서도 이 검사들이
-    생산보다 앞서지 않으므로 .date() 를 써도 인과가 뒤집히지 않는다.
+def _after(start: dt.datetime, minutes: int, as_of: dt.datetime) -> dt.datetime:
+    """start 로부터 minutes 뒤. 단 현재(앵커)를 넘지 않는다.
+
+    검사는 공정이 끝난 뒤에 하므로 시각이 앞으로 간다. 그런데 앵커 직전에 끝난
+    공정은 그 뒤에 검사할 시간이 아직 없다. 자르지 않으면 판정이 채워진 검사가
+    미래에 놓인다.
     """
-    return dt.datetime.combine(
-        base_date + dt.timedelta(days=days_after), dt.time(hour), tzinfo=dt.timezone.utc
-    )
+    return not_after(start + dt.timedelta(minutes=minutes), as_of)
+
+
+def _within_window(
+    rng: random.Random, window: tuple[dt.datetime, dt.datetime], shift_hour: int
+) -> dt.datetime:
+    """생산 구간 안, 주간 근무조 시간대의 한 시각.
+
+    출하검사(OQC)·공정능력조사(PCS)·설비적격성(EQV)은 특정 공정이력에서
+    파생되지 않고 정기적으로 수행한다. 그래도 생산 구간 밖에 두면 안 된다.
+    앞으로 나가면 아직 오지 않은 날짜에 완료된 검사가 생기고, 뒤로 물러나면
+    이번 생산과 무관한 기록이 된다.
+
+    구간 안에서 근무조 시간대에 드는 시각만 후보로 모아 그중 하나를 고른다.
+    범위를 벗어난 값을 양끝으로 자르는 방식을 쓰면 잘린 행들이 경계 시각
+    하나에 그대로 쌓인다. 후보를 미리 거르면 그 뭉침이 생기지 않는다.
+    """
+    start, end = window
+    span_hours = int((end - start).total_seconds() // 3600)
+    candidates = [
+        moment
+        for offset in range(span_hours + 1)
+        if (moment := start + dt.timedelta(hours=offset)) + dt.timedelta(minutes=59) <= end
+        and shift_hour <= moment.hour < shift_hour + _SHIFT_LENGTH_HOURS
+    ]
+    if not candidates:
+        # 구간이 근무조 하나보다 짧은 경우. 시간대를 포기하고 구간 안에서 고른다.
+        seconds = max(int((end - start).total_seconds()), 0)
+        return start + dt.timedelta(seconds=rng.randint(0, seconds))
+    return rng.choice(candidates) + dt.timedelta(minutes=rng.randint(0, 59))
 
 
 def _bounded(rng: random.Random, low: int, high: int, cap: int) -> int:
@@ -76,7 +122,8 @@ class _IdGen:
 
 
 def build_inspections(snapshot: MesSnapshot, inspectors: list[dict]) -> list[dict]:
-    base_date = anchor_date(snapshot)
+    as_of = mes_anchor(snapshot)
+    window = (window_start(snapshot), as_of)
     rng = random.Random(SEED_INSPECTION)
     ids = _IdGen()
     by_team: dict[str, list[dict]] = {}
@@ -87,11 +134,11 @@ def build_inspections(snapshot: MesSnapshot, inspectors: list[dict]) -> list[dic
     results = sorted(snapshot.process_results, key=lambda r: r["id"])
 
     rows: list[dict] = []
-    rows.extend(_build_ipqc(rng, ids, results, lots, by_team))
-    rows.extend(_build_retest(rng, ids, results, lots, by_team))
-    rows.extend(_build_oqc(rng, ids, snapshot, by_team, base_date))
-    rows.extend(_build_pcs(rng, ids, snapshot, by_team, base_date))
-    rows.extend(_build_eqv(rng, ids, snapshot, by_team, base_date))
+    rows.extend(_build_ipqc(rng, ids, results, lots, by_team, as_of))
+    rows.extend(_build_retest(rng, ids, results, lots, by_team, as_of))
+    rows.extend(_build_oqc(rng, ids, snapshot, by_team, as_of))
+    rows.extend(_build_pcs(rng, ids, snapshot, by_team, window))
+    rows.extend(_build_eqv(rng, ids, snapshot, by_team, window))
     return rows
 
 
@@ -139,7 +186,7 @@ def _row(
     }
 
 
-def _build_ipqc(rng, ids, results, lots, by_team) -> list[dict]:
+def _build_ipqc(rng, ids, results, lots, by_team, as_of) -> list[dict]:
     """MES 91건 1:1. 판정 분포는 스펙 6.1절을 그대로 따른다."""
     fails = [r for r in results if r["result"] == "Fail"]
     reworks = [r for r in results if r["result"] == "Rework"]
@@ -207,7 +254,7 @@ def _build_ipqc(rng, ids, results, lots, by_team) -> list[dict]:
                 eqp_id=mes["eqp_id"],
                 mes_id=mes["id"],
                 inspector=rng.choice(by_team[_TEAM_BY_TYPE["IPQC"]]),
-                when=parse_mes_time(mes["out_time"]) + dt.timedelta(minutes=rng.randint(10, 240)),
+                when=_after(parse_mes_time(mes["out_time"]), rng.randint(10, 240), as_of),
                 wafers=wafers,
                 sample_size=sample_size,
                 judgment=judgment,
@@ -220,7 +267,7 @@ def _build_ipqc(rng, ids, results, lots, by_team) -> list[dict]:
     return rows
 
 
-def _build_retest(rng, ids, results, lots, by_team) -> list[dict]:
+def _build_retest(rng, ids, results, lots, by_team, as_of) -> list[dict]:
     """결함 보유 35 ∪ non-Pass 7 = 40건 재검사. 측정치 3점을 남긴다."""
     targets = [r for r in results if r.get("defect_code") or r["result"] != "Pass"]
     clean_mes = [r for r in targets if not r.get("defect_code")]
@@ -256,7 +303,7 @@ def _build_retest(rng, ids, results, lots, by_team) -> list[dict]:
                 eqp_id=mes["eqp_id"],
                 mes_id=mes["id"],
                 inspector=rng.choice(by_team[_TEAM_BY_TYPE["IPQC-RT"]]),
-                when=parse_mes_time(mes["out_time"]) + dt.timedelta(minutes=rng.randint(300, 720)),
+                when=_after(parse_mes_time(mes["out_time"]), rng.randint(300, 720), as_of),
                 wafers=wafers,
                 sample_size=sample_size,
                 judgment=judgment,
@@ -269,11 +316,21 @@ def _build_retest(rng, ids, results, lots, by_team) -> list[dict]:
     return rows
 
 
-def _build_oqc(rng, ids, snapshot, by_team, base_date) -> list[dict]:
-    """Done 로트 6건을 출하 배치 4개로 나눠 24건."""
+def _build_oqc(rng, ids, snapshot, by_team, as_of) -> list[dict]:
+    """Done 로트 6건을 출하 배치 4개로 나눠 24건.
+
+    출하검사는 로트 생산이 끝난 뒤 4~24시간 안에 한다. 전역 날짜가 아니라
+    그 로트의 마지막 공정 종료 시각에서 유도하므로 로트마다 시점이 다르다.
+    아직 생산 중인 로트(Running/Hold)에는 출하검사가 없다. "출하검사 대기
+    로트"가 자연히 생기고, 이것 자체가 교차 질의 소재가 된다.
+    """
     done = sorted((l for l in snapshot.lots if l["status"] == "Done"), key=lambda l: l["lot_id"])
+    completed = _lot_completion(snapshot)
     step_names = {s["step_code"]: s["step_name"] for s in snapshot.route}
     plan_slots = [(lot, batch) for lot in done for batch in range(1, 5)]
+    missing = [lot["lot_id"] for lot, _ in plan_slots if lot["lot_id"] not in completed]
+    if missing:
+        raise ValueError(f"Done 로트인데 MES 공정이력이 없습니다: {sorted(set(missing))}")
     order = list(range(len(plan_slots)))
     rng.shuffle(order)
     judgments = {}
@@ -302,7 +359,7 @@ def _build_oqc(rng, ids, snapshot, by_team, base_date) -> list[dict]:
                 eqp_id=None,
                 mes_id=None,
                 inspector=rng.choice(by_team[_TEAM_BY_TYPE["OQC"]]),
-                when=_shift_start(base_date, 1, 8) + dt.timedelta(minutes=rng.randint(0, 600)),
+                when=_after(completed[lot["lot_id"]], rng.randint(240, 1440), as_of),
                 wafers=wafers,
                 sample_size=sample_size,
                 judgment=judgment,
@@ -315,7 +372,7 @@ def _build_oqc(rng, ids, snapshot, by_team, base_date) -> list[dict]:
     return rows
 
 
-def _build_pcs(rng, ids, snapshot, by_team, base_date) -> list[dict]:
+def _build_pcs(rng, ids, snapshot, by_team, window) -> list[dict]:
     """제품 4 × 공정 9 = 36건 정기 공정능력 조사. 로트에 매이지 않는다."""
     products = sorted(snapshot.products, key=lambda p: p["product_code"])
     steps = sorted(snapshot.route, key=lambda s: s["seq"])
@@ -339,7 +396,7 @@ def _build_pcs(rng, ids, snapshot, by_team, base_date) -> list[dict]:
                 eqp_id=None,
                 mes_id=None,
                 inspector=rng.choice(by_team[_TEAM_BY_TYPE["PCS"]]),
-                when=_shift_start(base_date, 1, 9) + dt.timedelta(minutes=rng.randint(0, 1440)),
+                when=_within_window(rng, window, 9),
                 wafers=3,
                 sample_size=9,
                 judgment=judgment,
@@ -354,7 +411,7 @@ def _build_pcs(rng, ids, snapshot, by_team, base_date) -> list[dict]:
     return rows
 
 
-def _build_eqv(rng, ids, snapshot, by_team, base_date) -> list[dict]:
+def _build_eqv(rng, ids, snapshot, by_team, window) -> list[dict]:
     """설비 8대 × 2회 = 16건 설비 검증. 제품과 로트 모두 무관하다."""
     step_names = {s["step_code"]: s["step_name"] for s in snapshot.route}
     slots = [(e, run) for e in snapshot.equipment for run in (1, 2)]
@@ -377,7 +434,7 @@ def _build_eqv(rng, ids, snapshot, by_team, base_date) -> list[dict]:
                 eqp_id=equipment["eqp_id"],
                 mes_id=None,
                 inspector=rng.choice(by_team[_TEAM_BY_TYPE["EQV"]]),
-                when=_shift_start(base_date, 2, 7) + dt.timedelta(minutes=rng.randint(0, 1440)),
+                when=_within_window(rng, window, 7),
                 wafers=2,
                 sample_size=6,
                 judgment=judgment,

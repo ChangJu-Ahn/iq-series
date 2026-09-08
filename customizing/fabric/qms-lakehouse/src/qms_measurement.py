@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import random
 
+from src.mes_client import not_after
 from src.qms_masters import spec_index
 from src.qms_reference import (
     CHARACTERISTIC_BASE,
@@ -58,7 +59,9 @@ def _draw(rng: random.Random, spec: dict, sigma: float, force_out: bool) -> floa
     return round(value, 4)
 
 
-def build_measurements(inspections: list[dict], specs: list[dict]) -> list[dict]:
+def build_measurements(
+    inspections: list[dict], specs: list[dict], as_of: dt.datetime
+) -> list[dict]:
     rng = random.Random(SEED_MEASUREMENT)
     index = spec_index(specs)
     rows: list[dict] = []
@@ -104,8 +107,13 @@ def build_measurements(inspections: list[dict], specs: list[dict]) -> list[dict]
                     "judgment": "NG" if outside else "OK",
                     "metrology_eqp_id": METROLOGY_EQP[char_code],
                     "measured_by": inspection["inspector_id"],
-                    "measured_at": inspection["inspection_datetime"]
-                    + dt.timedelta(minutes=5 * (position + 1)),
+                    # 계측은 검사 중에 이뤄지므로 검사 시각 뒤로 5분씩 밀린다.
+                    # 앵커 직전 검사는 그만큼의 시간이 아직 없으므로 자른다.
+                    "measured_at": not_after(
+                        inspection["inspection_datetime"]
+                        + dt.timedelta(minutes=5 * (position + 1)),
+                        as_of,
+                    ),
                 }
             )
     return rows

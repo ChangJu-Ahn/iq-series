@@ -242,6 +242,28 @@ MES의 상위 불량코드 6종을 QMS가 원인·조치 단위로 4단계씩 �
 난수로 생성하면 "MES는 Pass인데 QMS는 폐기"같은 모순이 발생한다. 그래서 MES 91건 이력을
 생성 앵커로 사용한다.
 
+## 시간축 — 질의 전에 반드시 알아야 할 것
+
+이 데이터의 **"지금"은 MES 공정이력의 마지막 종료 시각**입니다. QMS에는 고정 날짜가
+없고 모든 시각이 그 기준점에서 유도됩니다. MES를 재배포하면 QMS 데이터도 통째로
+따라 이동합니다.
+
+**이미 일어난 일은 전부 "지금" 이하입니다.**
+`inspection_datetime`, `measured_at`, `receipt_date`, `inspection_date`,
+`detected_date`, `closed_date`, `decision_date`
+
+**아직 오지 않은 일은 미래에 있습니다. 이상한 값이 아닙니다.**
+`due_date`(조치 기한), `effectiveness_check_date`(유효성 점검 예정일)
+
+여기서 나오는 질문들입니다.
+
+- "기한이 지났는데 아직 종결 안 된 부적합" → `due_date < 지금 AND closed_date IS NULL`
+- "출하검사 대기 로트" → MES에서 아직 Done이 아닌 로트. `qms_inspection`에 OQC가 없습니다
+- "최근 검사 결과" → 가장 늦은 `inspection_datetime` 부근. 그보다 뒤의 데이터는 없습니다
+
+출하검사(OQC)는 **로트마다 생산이 끝난 뒤 4~24시간 안에** 이뤄집니다. 전역 날짜가
+아니므로 로트별로 시점이 다릅니다. 생산 중인 로트(Running·Hold)에는 OQC가 없습니다.
+
 ## null 이 정상인 경우
 
 빈 값을 결측으로 오해하면 안 됩니다. 다음은 설계상 당연히 비어 있습니다.
@@ -252,6 +274,7 @@ MES의 상위 불량코드 6종을 QMS가 원인·조치 단위로 4단계씩 �
 | `qms_inspection.product_code` (EQV) | 설비검증은 제품과 무관합니다 |
 | `qms_inspection.mes_process_result_id` (OQC·PCS·EQV) | MES 공정이력에 대응하는 사건이 없습니다 |
 | `qms_nonconformance.lot_id`·`step_code` (고객제기) | 고객 클레임은 공정 시점이 특정되지 않습니다 |
+| `qms_nonconformance.closed_date` (미종결 건) | 아직 종결되지 않았습니다. 종결 예정일이 "지금"을 넘는 건은 조사중으로 남습니다 |
 | `qms_incoming_inspection.defect_code` (합격 건) | 결함이 없으니 코드도 없습니다 |
 
 ## 검사 유형 다섯 가지

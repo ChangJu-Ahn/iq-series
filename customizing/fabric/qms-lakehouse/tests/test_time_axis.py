@@ -20,6 +20,18 @@ from src.mes_client import MesSnapshot, anchor_date, mes_anchor, parse_mes_time
 from src.qms_schema import TABLE_DDL, build_all_tables
 from src.qms_validate import validate
 
+# 이미 일어난 사건을 담는 컬럼. src 의 목록을 가져다 쓰면 그쪽이 비어도
+# 테스트가 통과하므로 여기에 따로 적는다.
+COMPLETED_COLUMNS = [
+    ("qms_inspection", "inspection_datetime"),
+    ("qms_measurement", "measured_at"),
+    ("qms_incoming_inspection", "receipt_date"),
+    ("qms_incoming_inspection", "inspection_date"),
+    ("qms_nonconformance", "detected_date"),
+    ("qms_nonconformance", "closed_date"),
+    ("qms_disposition", "decision_date"),
+]
+
 SHIFT = dt.timedelta(days=27)
 
 TIMEZONES = ["UTC", "Asia/Seoul", "America/Los_Angeles", "Europe/Berlin", "Asia/Kolkata"]
@@ -64,9 +76,8 @@ def shifted(snapshot):
 def spread_snapshot(snapshot: MesSnapshot, hours: float) -> MesSnapshot:
     """공정이력을 주어진 시간 폭에 고르게 흩뿌린 스냅샷.
 
-    현재 픽스처는 옛 MES 라 91건이 사실상 한 순간에 몰려 있다. 그 상태로는
-    "시각이 흩어진 데이터"를 한 번도 겪지 못한 채 테스트가 통과한다.
-    mock-mes-kr#3 이후의 실제 분포(63시간)를 흉내내 그 공백을 메운다.
+    픽스처의 폭은 MES 배포마다 달라진다. 그 값에 기대면 테스트가 데이터의
+    우연한 성질을 단언하게 되므로, 검사하려는 폭을 여기서 직접 만든다.
     """
     payload = copy.deepcopy(snapshot.to_dict())
     rows = sorted(payload["process_results"], key=lambda r: r["id"])
@@ -216,20 +227,95 @@ def test_anchor_date_is_the_utc_date_of_the_anchor(snapshot):
     assert anchor_date(snapshot) == mes_anchor(snapshot).date()
 
 
-def test_post_production_inspections_never_precede_production(snapshot):
-    """앵커가 하루 중 언제든 OQC/PCS/EQV 는 생산보다 뒤여야 한다.
+def test_completed_events_never_reach_into_the_future(snapshot):
+    """앵커가 하루 중 언제든 완료된 사건은 현재를 넘지 않아야 한다.
 
-    .date() 기반이라 앵커 시각에 따라 간격이 달라진다. 그 간격이 음수가 되지
-    않는지를 하루 24시간 전부에서 확인한다.
+    앵커는 MES 배포 시각이라 실습 시점의 "지금"이다. 판정이 채워진 검사나
+    종결된 부적합이 그 뒤에 있으면 아직 오지 않은 날짜에 끝난 사건이 된다.
+    앵커 시각에 따라 남는 여유가 달라지므로 하루 24시간 전부에서 확인한다.
+
+    기대값을 mes_anchor 로 만들면 생성 쪽과 검사 쪽에 같은 결함이 걸려 서로
+    상쇄된다. 원시 process_results 에서 직접 최대 out_time 을 구한다.
     """
     base = mes_anchor(snapshot)
     for hour in range(24):
         moved = shifted_snapshot(snapshot, base.replace(hour=hour, minute=59, second=59) - base)
-        anchor = mes_anchor(moved)
+        raw = max(parse_mes_time(r["out_time"]) for r in moved.process_results)
         tables = build_all_tables(moved)
-        for row in tables["qms_inspection"]:
-            if row["inspection_type"] in {"OQC", "PCS", "EQV"}:
-                assert row["inspection_datetime"] > anchor
+        for table, column in COMPLETED_COLUMNS:
+            for row in tables[table]:
+                value = row.get(column)
+                if value is None:
+                    continue
+                ceiling = raw if isinstance(value, dt.datetime) else raw.date()
+                assert value <= ceiling, f"{hour}시 앵커에서 {table}.{column}={value} 가 미래다"
+
+
+def test_planned_dates_are_allowed_to_be_in_the_future(tables):
+    """조치 기한과 유효성 점검 예정일은 미래에 있어야 한다.
+
+    아직 오지 않은 일까지 과거로 끌어내리면 "기한이 임박한 미결 부적합" 같은
+    질문이 성립하지 않는다. 미래를 막는 규칙이 이쪽까지 번지지 않게 고정한다.
+    """
+    for table, column in [
+        ("qms_nonconformance", "due_date"),
+        ("qms_disposition", "effectiveness_check_date"),
+    ]:
+        future = [r[column] for r in tables[table] if r[column] is not None]
+        assert future, f"{table}.{column} 이 비어 있습니다"
+
+
+def test_shipping_inspection_follows_each_lot_not_a_global_date(snapshot):
+    """출하검사는 그 로트의 생산 완료 뒤에 온다.
+
+    전역 날짜에서 만들면 로트마다 완료 시점이 달라도 검사가 한곳에 모인다.
+    로트별로 유도해야 "먼저 끝난 로트를 먼저 출하검사한다"가 성립한다.
+    """
+    completed: dict[str, dt.datetime] = {}
+    for row in snapshot.process_results:
+        lot_id = row.get("lot_id")
+        if not lot_id:
+            continue
+        moment = parse_mes_time(row["out_time"])
+        if lot_id not in completed or moment > completed[lot_id]:
+            completed[lot_id] = moment
+
+    oqc = [r for r in build_all_tables(snapshot)["qms_inspection"] if r["inspection_type"] == "OQC"]
+    assert oqc
+    for row in oqc:
+        assert row["inspection_datetime"] >= completed[row["lot_id"]]
+
+    # 로트마다 검사 시점이 갈리는지. 전부 같으면 전역 날짜로 되돌아간 것이다.
+    starts = {row["lot_id"]: row["inspection_datetime"] for row in oqc}
+    assert len(set(starts.values())) > 1
+
+
+def test_lots_still_in_production_have_no_shipping_inspection(snapshot):
+    """생산 중인 로트에는 출하검사가 없다.
+
+    아직 끝나지 않은 로트까지 출하검사를 만들면 "출하검사 대기 로트"라는
+    질문이 성립하지 않는다.
+    """
+    tables = build_all_tables(snapshot)
+    inspected = {
+        r["lot_id"] for r in tables["qms_inspection"] if r["inspection_type"] == "OQC"
+    }
+    done = {l["lot_id"] for l in snapshot.lots if l["status"] == "Done"}
+    pending = {l["lot_id"] for l in snapshot.lots if l["status"] != "Done"}
+    assert inspected == done
+    assert pending and not (inspected & pending)
+
+
+def test_periodic_inspections_do_not_pile_on_the_window_edges(snapshot):
+    """정기 검사가 구간 경계 한 시각에 뭉치지 않는지.
+
+    범위를 벗어난 값을 양끝으로 자르면 잘린 행이 경계 시각 하나에 그대로
+    쌓인다. 적재는 성공하고 분포만 망가지므로 눈에 잘 띄지 않는다.
+    """
+    rows = build_all_tables(snapshot)["qms_inspection"]
+    for kind in ("PCS", "EQV"):
+        values = [r["inspection_datetime"] for r in rows if r["inspection_type"] == kind]
+        assert len(set(values)) == len(values), f"{kind} 에 같은 시각이 겹칩니다"
 
 
 # --- 타임존 통일 -------------------------------------------------------------
@@ -334,21 +420,29 @@ def test_spread_out_snapshot_keeps_the_anchor_relationship(snapshot):
         assert new_row["inspection_datetime"] - old_row["inspection_datetime"] == SHIFT
 
 
-def test_inspections_track_the_spread_not_just_the_anchor(snapshot):
-    """MES 가 흩어지면 IPQC 도 같이 흩어져야 한다.
+@pytest.mark.parametrize("hours", [0, 6, 24, 63, 120])
+def test_inspection_spread_tracks_the_mes_spread(snapshot, hours):
+    """MES 가 흩어진 만큼 IPQC 도 흩어져야 한다.
 
     IPQC 가 앵커 하나에만 매달려 있으면 MES 가 아무리 흩어져도 QMS 는 한 점에
-    모인다. 설비별·시간별 교차 질의가 그때 무너진다.
+    모인다. 설비별·시간별 교차 질의가 그때 무너진다. 폭을 픽스처에서 읽으면
+    배포마다 달라지는 값을 단언하게 되므로 검사할 폭을 직접 만든다.
+
+    공정검사 시각은 MES 종료 시각에 검사 준비 시간을 더해 만들기 때문에 폭이
+    정확히 일치하지는 않는다. 실측 최대 편차가 4시간이라 여유를 두 배로 잡았다.
     """
-    narrow = build_all_tables(snapshot)["qms_inspection"]
-    wide = build_all_tables(spread_snapshot(snapshot, hours=63))["qms_inspection"]
+    tolerance = 8
+    spread = spread_snapshot(snapshot, hours=hours)
+    times = [parse_mes_time(row["out_time"]) for row in spread.process_results]
+    mes_span = (max(times) - min(times)).total_seconds() / 3600
 
-    def span(rows, kind):
-        values = [r["inspection_datetime"] for r in rows if r["inspection_type"] == kind]
-        return (max(values) - min(values)).total_seconds() / 3600
+    rows = build_all_tables(spread)["qms_inspection"]
+    values = [r["inspection_datetime"] for r in rows if r["inspection_type"] == "IPQC"]
+    ipqc_span = (max(values) - min(values)).total_seconds() / 3600
 
-    assert span(narrow, "IPQC") < 12
-    assert span(wide, "IPQC") > 50
+    assert abs(ipqc_span - mes_span) <= tolerance, (
+        f"MES 폭 {mes_span:.1f}h 인데 IPQC 폭은 {ipqc_span:.1f}h 입니다"
+    )
 
 
 def test_source_has_no_wall_clock_constants():

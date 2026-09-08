@@ -12,9 +12,13 @@ import json
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, TypeVar
 
 MES_BASE_URL = "https://mock-mes.greenrock-bb44c93a.koreacentral.azurecontainerapps.io"
+
+# not_after 는 datetime 과 date 양쪽에 쓰인다. 둘을 섞어 넘기면 비교가 터지므로
+# 같은 타입끼리만 묶이도록 제약한다.
+_T = TypeVar("_T", dt.datetime, dt.date)
 
 
 def parse_mcp_body(raw: str) -> dict | None:
@@ -110,11 +114,17 @@ def parse_mes_time(value: str) -> dt.datetime:
 
 
 def mes_anchor(snapshot: MesSnapshot) -> dt.datetime:
-    """MES 공정이력의 마지막 종료 시각. 모든 QMS 시각의 기준점이다.
+    """MES 공정이력의 마지막 종료 시각. QMS 데이터의 "지금"이다.
 
-    QMS 시각을 벽시계 상수로 두면 MES 를 재배포할 때 MES 만 움직이고 QMS 는
-    제자리에 남는다. MES 앵커가 Bicep 의 utcNow() 로 배포 시점에 평가되므로
-    이 어긋남은 재배포마다 반드시 일어난다. 그래서 기준점을 데이터에서 얻는다.
+    두 가지 역할을 겸한다.
+
+    첫째, 모든 QMS 시각의 기준점이다. QMS 시각을 벽시계 상수로 두면 MES 를
+    재배포할 때 MES 만 움직이고 QMS 는 제자리에 남는다. MES 앵커가 Bicep 의
+    utcNow() 로 배포 시점에 평가되므로 이 어긋남은 재배포마다 반드시 일어난다.
+
+    둘째, 완료된 사건의 상한이다. 앵커는 곧 배포 시각이라 실습 시점의 "현재"와
+    같다. MES 는 미래 데이터를 만들지 않으므로, QMS 만 앵커를 넘으면 아직 오지
+    않은 날짜에 판정이 끝난 검사나 종결된 부적합이 생긴다.
     """
     if not snapshot.process_results:
         raise ValueError("공정이력이 비어 있어 QMS 시각의 기준점을 정할 수 없습니다.")
@@ -124,6 +134,22 @@ def mes_anchor(snapshot: MesSnapshot) -> dt.datetime:
 def anchor_date(snapshot: MesSnapshot) -> dt.date:
     """앵커의 UTC 날짜. 날짜 컬럼들의 기준일이다."""
     return mes_anchor(snapshot).date()
+
+
+def window_start(snapshot: MesSnapshot) -> dt.datetime:
+    """MES 공정이력의 첫 종료 시각. 생산 구간의 시작이다."""
+    if not snapshot.process_results:
+        raise ValueError("공정이력이 비어 있어 생산 구간을 정할 수 없습니다.")
+    return min(parse_mes_time(row["out_time"]) for row in snapshot.process_results)
+
+
+def not_after(moment: _T, limit: _T) -> _T:
+    """이미 일어난 사건의 시각을 현재(앵커) 이하로 자른다.
+
+    조치 기한이나 유효성 점검 예정일처럼 아직 오지 않은 일은 미래가 정상이므로
+    이 함수를 거치지 않는다. 완료를 뜻하는 값에만 쓴다.
+    """
+    return min(moment, limit)
 
 
 class MesApiKeyMissing(RuntimeError):

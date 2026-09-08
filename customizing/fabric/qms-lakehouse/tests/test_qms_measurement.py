@@ -1,5 +1,6 @@
 import collections
 
+from src.mes_client import mes_anchor
 from src.qms_inspection import build_inspections
 from src.qms_masters import build_inspection_specs, build_inspectors, spec_index
 from src.qms_measurement import (
@@ -12,7 +13,9 @@ from src.qms_measurement import (
 
 def measurements(snapshot):
     inspections = build_inspections(snapshot, build_inspectors(snapshot))
-    return inspections, build_measurements(inspections, build_inspection_specs(snapshot))
+    return inspections, build_measurements(
+        inspections, build_inspection_specs(snapshot), mes_anchor(snapshot)
+    )
 
 
 def test_total_is_260_and_matches_declared_measurement_counts(snapshot):

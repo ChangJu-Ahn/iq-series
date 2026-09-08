@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime as dt
 import random
 
-from src.mes_client import MesSnapshot, anchor_date
+from src.mes_client import MesSnapshot, anchor_date, not_after
 from src.qms_inspection import mes_result_index
 from src.qms_reference import (
     APPROVER_NAMES,
@@ -96,21 +96,28 @@ def build_nonconformances(
         ncr_id = f"NCR-2026-{position + 1:04d}"
         if seed[0] == "inspection":
             ncr = _ncr_from_inspection(
-                rng, ncr_id, inspection_by_id[seed[1]], mes, lots, by_mes_defect, devices
+                rng, ncr_id, inspection_by_id[seed[1]], mes, lots, by_mes_defect, devices, base_date
             )
         elif seed[0] == "iqc":
             ncr = _ncr_from_iqc(
-                rng, ncr_id, iqc_by_id[seed[1]], defect_by_code, lots, step_names, devices
+                rng, ncr_id, iqc_by_id[seed[1]], defect_by_code, lots, step_names, devices, base_date
             )
         else:
             ncr = _ncr_from_complaint(
                 rng, ncr_id, products[position % len(products)], defect_codes, base_date
             )
         disposition = _disposition_for(
-            rng, f"DSP-2026-{position + 1:04d}", ncr, devices, step_names
+            rng, f"DSP-2026-{position + 1:04d}", ncr, devices, step_names, base_date
         )
         if ncr["status"] == "완료":
-            ncr["closed_date"] = disposition["decision_date"] + dt.timedelta(days=rng.randint(0, 3))
+            closed = disposition["decision_date"] + dt.timedelta(days=rng.randint(0, 3))
+            if closed <= base_date:
+                ncr["closed_date"] = closed
+            else:
+                # 종결 예정일이 아직 오지 않았다. 그대로 두면 미래에 종결된
+                # 부적합이 생긴다. 최근 발견된 건이 아직 조사 중인 것이
+                # 현실이므로 상태를 낮춘다. closed_date 는 None 으로 남는다.
+                ncr["status"] = "조사중"
         ncrs.append(ncr)
         dispositions.append(disposition)
     return ncrs, dispositions
@@ -217,14 +224,16 @@ def _base_ncr(rng, ncr_id: str, source: str, defect: dict, detected: dt.date) ->
     }
 
 
-def _ncr_from_inspection(rng, ncr_id, inspection, mes, lots, by_mes_defect, devices) -> dict:
+def _ncr_from_inspection(rng, ncr_id, inspection, mes, lots, by_mes_defect, devices, as_of) -> dict:
     mes_row = mes.get(inspection["mes_process_result_id"]) if inspection["mes_process_result_id"] else None
     if mes_row and mes_row.get("defect_code"):
         parent = mes_row["defect_code"]
     else:
         parent = rng.choice(STEP_DEFECT_MAP[inspection["step_code"]])
     defect = rng.choice(by_mes_defect[parent])
-    detected = inspection["inspection_datetime"].date() + dt.timedelta(days=rng.randint(0, 2))
+    detected = not_after(
+        inspection["inspection_datetime"].date() + dt.timedelta(days=rng.randint(0, 2)), as_of
+    )
     ncr = _base_ncr(
         rng, ncr_id, _SOURCE_BY_INSPECTION_TYPE[inspection["inspection_type"]], defect, detected
     )
@@ -255,9 +264,9 @@ def _ncr_from_inspection(rng, ncr_id, inspection, mes, lots, by_mes_defect, devi
     return ncr
 
 
-def _ncr_from_iqc(rng, ncr_id, iqc, defect_by_code, lots, step_names, devices) -> dict:
+def _ncr_from_iqc(rng, ncr_id, iqc, defect_by_code, lots, step_names, devices, as_of) -> dict:
     defect = defect_by_code[iqc["defect_code"]]
-    detected = iqc["inspection_date"] + dt.timedelta(days=rng.randint(0, 2))
+    detected = not_after(iqc["inspection_date"] + dt.timedelta(days=rng.randint(0, 2)), as_of)
     ncr = _base_ncr(rng, ncr_id, "입고검사", defect, detected)
     ncr["iqc_id"] = iqc["iqc_id"]
     ncr["material_code"] = iqc["material_code"]
@@ -280,7 +289,7 @@ def _ncr_from_iqc(rng, ncr_id, iqc, defect_by_code, lots, step_names, devices) -
 
 def _ncr_from_complaint(rng, ncr_id, product, defect_codes, base_date) -> dict:
     defect = rng.choice(defect_codes)
-    detected = base_date + dt.timedelta(days=rng.randint(3, 10))
+    detected = base_date - dt.timedelta(days=rng.randint(3, 10))
     ncr = _base_ncr(rng, ncr_id, "고객제기", defect, detected)
     ncr["product_code"] = product["product_code"]
     ncr["product_name"] = product["product_name"]
@@ -289,7 +298,9 @@ def _ncr_from_complaint(rng, ncr_id, product, defect_codes, base_date) -> dict:
     return ncr
 
 
-def _disposition_for(rng, disposition_id: str, ncr: dict, devices: dict, step_names: dict) -> dict:
+def _disposition_for(
+    rng, disposition_id: str, ncr: dict, devices: dict, step_names: dict, as_of: dt.date
+) -> dict:
     inspection_id = ncr["inspection_id"]
     rework_step, rework_result, scrap_cost = None, None, 0
 
@@ -316,7 +327,9 @@ def _disposition_for(rng, disposition_id: str, ncr: dict, devices: dict, step_na
     disposition_qty = rng.randint(1, ncr["affected_qty"])
     if disposition_type == "폐기":
         scrap_cost = disposition_qty * rng.randrange(*_SCRAP_UNIT_COST, 100_000)
-    decision_date = ncr["detected_date"] + dt.timedelta(days=rng.randint(1, 5))
+    decision_date = not_after(
+        ncr["detected_date"] + dt.timedelta(days=rng.randint(1, 5)), as_of
+    )
     return {
         "disposition_id": disposition_id,
         "ncr_id": ncr["ncr_id"],

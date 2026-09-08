@@ -80,7 +80,10 @@ def build_incoming_inspections(
         low, high = _RECEIPT_QTY[material["uom"]]
         received_qty = float(rng.randint(low, high))
         sample_size = min(rng.randint(3, 20), int(received_qty))
-        receipt_date = base_date - dt.timedelta(days=rng.randint(0, 30))
+        # 입고일은 앵커에서 2~32일 전. 최소 2일을 띄우는 이유는 입고검사가
+        # 입고 후 0~2일에 이뤄지기 때문이다. 0일부터 잡으면 검사일이 앵커를
+        # 넘어 아직 오지 않은 날짜에 판정이 끝난 입고검사가 생긴다.
+        receipt_date = base_date - dt.timedelta(days=rng.randint(2, 32))
         coa_received = rng.random() >= 0.10
         if not coa_received:
             coa_conformance = "미제출"

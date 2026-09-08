@@ -9,7 +9,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-from src.mes_client import MesSnapshot, parse_mes_time
+from src.mes_client import MesSnapshot, mes_anchor, parse_mes_time
 
 TABLE_ROW_TARGETS = {
     "qms_defect_code": 24,
@@ -53,6 +53,7 @@ def validate(snapshot: MesSnapshot, tables: dict[str, list[dict]]) -> list[Valid
         _check_internal_references(tables),
         _check_timestamp_timezones(tables),
         _check_time_causality(snapshot, tables),
+        _check_no_future_completions(snapshot, tables),
         _check_quantities(tables),
         _check_measurement_limits(tables),
         _check_devices(snapshot, tables),
@@ -187,9 +188,48 @@ def _check_time_causality(snapshot, tables) -> ValidationResult:
         if inspection and row["detected_date"] < inspection["inspection_datetime"].date():
             problems.append(f"{row['ncr_id']} 검출일이 검사일보다 이르다")
     for row in tables["qms_disposition"]:
-        if row["decision_date"] <= ncr_by_id[row["ncr_id"]]["detected_date"]:
+        if row["decision_date"] < ncr_by_id[row["ncr_id"]]["detected_date"]:
             problems.append(f"{row['disposition_id']} 결정일이 검출일 이전이다")
     return _result("시간 인과", problems, "검사 → 부적합 → 처리 순서 성립")
+
+
+# 완료를 뜻하는 컬럼. 앵커(데이터의 현재)를 넘으면 아직 오지 않은 날짜에
+# 끝난 사건이 된다. 조치 기한(due_date)과 유효성 점검 예정일은 아직 오지
+# 않은 일이므로 여기 없다. 그쪽이 미래인 것은 정상이다.
+_COMPLETED_COLUMNS = [
+    ("qms_inspection", "inspection_datetime"),
+    ("qms_measurement", "measured_at"),
+    ("qms_incoming_inspection", "receipt_date"),
+    ("qms_incoming_inspection", "inspection_date"),
+    ("qms_nonconformance", "detected_date"),
+    ("qms_nonconformance", "closed_date"),
+    ("qms_disposition", "decision_date"),
+]
+
+
+def _check_no_future_completions(snapshot, tables) -> ValidationResult:
+    """이미 끝난 사건이 현재를 넘지 않는지.
+
+    앵커는 MES 배포 시각이라 실습 시점의 "지금"과 같다. 판정이 채워진 검사나
+    종결된 부적합이 앵커를 넘으면, 참가자가 "최근 검사 결과"를 물었을 때 아직
+    오지 않은 날짜의 합격 판정이 돌아온다. 적재는 성공하므로 데이터를 직접
+    들여다보기 전에는 드러나지 않는다.
+    """
+    anchor = mes_anchor(snapshot)
+    limit = anchor.date()
+    problems = []
+    for table, column in _COMPLETED_COLUMNS:
+        for row in tables[table]:
+            value = row.get(column)
+            if value is None:
+                continue
+            # date 와 datetime 은 서로 비교할 수 없다. 컬럼 타입에 맞춰 자른다.
+            ceiling = anchor if isinstance(value, dt.datetime) else limit
+            if value > ceiling:
+                problems.append(f"{table}.{column} {value} 가 현재({ceiling})를 넘는다")
+    return _result(
+        "미래 완료 사건", problems, f"완료 컬럼 7종 전부 앵커({anchor:%Y-%m-%d %H:%M}) 이하", fatal=True
+    )
 
 
 def _check_quantities(tables) -> ValidationResult:

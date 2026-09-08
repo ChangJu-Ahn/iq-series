@@ -8,7 +8,7 @@ spark.createDataFrame(rows, schema=TABLE_DDL[name]) 로 그대로 쓰인다.
 
 from __future__ import annotations
 
-from src.mes_client import MesSnapshot
+from src.mes_client import MesSnapshot, mes_anchor
 from src.qms_incoming import build_incoming_inspections
 from src.qms_inspection import build_inspections
 from src.qms_masters import build_defect_codes, build_inspection_specs, build_inspectors
@@ -89,7 +89,7 @@ def build_all_tables(snapshot: MesSnapshot) -> dict[str, list[dict]]:
     defect_codes = build_defect_codes()
     specs = build_inspection_specs(snapshot)
     inspections = build_inspections(snapshot, inspectors)
-    measurements = build_measurements(inspections, specs)
+    measurements = build_measurements(inspections, specs, mes_anchor(snapshot))
     incoming = build_incoming_inspections(snapshot, inspectors, defect_codes)
     ncrs, dispositions = build_nonconformances(snapshot, inspections, incoming, defect_codes)
     return {
