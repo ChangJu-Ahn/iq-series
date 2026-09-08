@@ -12,11 +12,46 @@ from src.qms_validate import (
 )
 
 
-def test_all_ten_checks_pass_on_generated_data(snapshot, tables):
+def test_every_check_passes_on_generated_data(snapshot, tables):
+    """검증 항목이 무엇인지까지 고정한다.
+
+    개수만 세면 하나가 사라지고 다른 하나가 들어와도 통과한다. 검증이 조용히
+    빠지는 것을 막으려면 이름을 적어야 한다.
+    """
     results = validate(snapshot, tables)
-    assert len(results) == 10
+    assert [r.name for r in results] == [
+        "행수",
+        "고아 키",
+        "무중복 위반",
+        "내부 FK",
+        "타임존 통일",
+        "시각 컬럼 분류",
+        "시간 인과",
+        "미래 완료 사건",
+        "검사원 자격",
+        "수량 정합",
+        "측정치 규격",
+        "불일치 장치",
+    ]
     failed = [r for r in results if not r.passed]
     assert not failed, format_report(results)
+
+
+def test_fatal_checks_are_the_ones_that_block_loading(snapshot, tables):
+    """치명으로 표시된 항목이 무엇인지 고정한다.
+
+    치명 표시가 빠지면 검증은 실패해도 적재가 그대로 진행된다.
+    """
+    fatal = {r.name for r in validate(snapshot, tables) if r.fatal}
+    assert fatal == {
+        "고아 키",
+        "무중복 위반",
+        "내부 FK",
+        "타임존 통일",
+        "시각 컬럼 분류",
+        "미래 완료 사건",
+        "검사원 자격",
+    }
 
 
 def test_row_counts_total_1004(tables):

@@ -99,7 +99,7 @@ MES의 상위 불량코드 6종을 QMS가 원인·조치 단위로 4단계씩 �
 | `qualification_level` | string | 초급/중급/선임/책임 |
 | `certified_characteristics` | string | 자격 보유 특성 CSV |
 | `certified_from` | date | 자격 취득일 |
-| `certified_until` | date | 자격 만료일 |
+| `certified_until` | date | 자격 만료일. 3년 주기로 갱신되므로 활동 중인 검사원은 항상 미래 |
 | `is_active` | boolean | 재직 여부 |
 
 ### `qms_inspection` — 207행

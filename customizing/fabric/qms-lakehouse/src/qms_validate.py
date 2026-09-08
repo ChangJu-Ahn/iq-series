@@ -10,6 +10,7 @@ import datetime as dt
 from dataclasses import dataclass
 
 from src.mes_client import MesSnapshot, mes_anchor, parse_mes_time
+from src.qms_schema import TABLE_DDL
 
 TABLE_ROW_TARGETS = {
     "qms_defect_code": 24,
@@ -52,8 +53,10 @@ def validate(snapshot: MesSnapshot, tables: dict[str, list[dict]]) -> list[Valid
         _check_forbidden_columns(tables),
         _check_internal_references(tables),
         _check_timestamp_timezones(tables),
+        _check_time_column_coverage(tables),
         _check_time_causality(snapshot, tables),
         _check_no_future_completions(snapshot, tables),
+        _check_inspector_certification(snapshot, tables),
         _check_quantities(tables),
         _check_measurement_limits(tables),
         _check_devices(snapshot, tables),
@@ -194,9 +197,10 @@ def _check_time_causality(snapshot, tables) -> ValidationResult:
 
 
 # 완료를 뜻하는 컬럼. 앵커(데이터의 현재)를 넘으면 아직 오지 않은 날짜에
-# 끝난 사건이 된다. 조치 기한(due_date)과 유효성 점검 예정일은 아직 오지
-# 않은 일이므로 여기 없다. 그쪽이 미래인 것은 정상이다.
+# 끝난 사건이 된다.
 _COMPLETED_COLUMNS = [
+    ("qms_inspection_spec", "effective_from"),
+    ("qms_inspector", "certified_from"),
     ("qms_inspection", "inspection_datetime"),
     ("qms_measurement", "measured_at"),
     ("qms_incoming_inspection", "receipt_date"),
@@ -205,6 +209,51 @@ _COMPLETED_COLUMNS = [
     ("qms_nonconformance", "closed_date"),
     ("qms_disposition", "decision_date"),
 ]
+
+# 아직 오지 않은 일. 미래에 있는 것이 정상이라 상한을 걸지 않는다.
+# 여기까지 과거로 끌어내리면 "기한이 임박한 미결 부적합" 같은 질문이 죽는다.
+_PLANNED_COLUMNS = [
+    ("qms_inspector", "certified_until"),
+    ("qms_nonconformance", "due_date"),
+    ("qms_disposition", "effectiveness_check_date"),
+]
+
+
+def _declared_time_columns() -> set[tuple[str, str]]:
+    """DDL 이 선언한 DATE·TIMESTAMP 컬럼 전부.
+
+    분류 목록을 손으로 적으면 새 컬럼이 조용히 빠진다. 컬럼 이름에 date 나
+    time 이 들어가는지로 거르는 방식도 같은 함정이다. measured_at 은 둘 다
+    없어서 그런 필터에 걸리지 않는다. 그래서 선언된 타입에서 뽑는다.
+    """
+    columns = set()
+    for table, ddl in TABLE_DDL.items():
+        for field in ddl.split(","):
+            parts = field.strip().rsplit(" ", 1)
+            if len(parts) == 2 and parts[1] in ("DATE", "TIMESTAMP"):
+                columns.add((table, parts[0]))
+    return columns
+
+
+def _check_time_column_coverage(tables) -> ValidationResult:
+    """모든 시각 컬럼이 완료·예정 중 하나로 분류됐는지.
+
+    분류에서 빠진 컬럼은 미래 검사를 그냥 통과한다. 검증이 늘 PASS 라
+    안전해 보이지만 실제로는 그 컬럼을 아무도 보고 있지 않다.
+    """
+    classified = {c for c in _COMPLETED_COLUMNS} | {c for c in _PLANNED_COLUMNS}
+    declared = _declared_time_columns()
+    problems = [
+        f"{table}.{column} 이 완료·예정 어느 쪽으로도 분류되지 않았다"
+        for table, column in sorted(declared - classified)
+    ]
+    problems += [
+        f"{table}.{column} 은 DDL 에 없는 컬럼이다"
+        for table, column in sorted(classified - declared)
+    ]
+    return _result(
+        "시각 컬럼 분류", problems, f"DATE·TIMESTAMP {len(declared)}개 전부 분류됨", fatal=True
+    )
 
 
 def _check_no_future_completions(snapshot, tables) -> ValidationResult:
@@ -228,8 +277,32 @@ def _check_no_future_completions(snapshot, tables) -> ValidationResult:
             if value > ceiling:
                 problems.append(f"{table}.{column} {value} 가 현재({ceiling})를 넘는다")
     return _result(
-        "미래 완료 사건", problems, f"완료 컬럼 7종 전부 앵커({anchor:%Y-%m-%d %H:%M}) 이하", fatal=True
+        "미래 완료 사건",
+        problems,
+        f"완료 컬럼 {len(_COMPLETED_COLUMNS)}종 전부 앵커({anchor:%Y-%m-%d %H:%M}) 이하",
+        fatal=True,
     )
+
+
+def _check_inspector_certification(snapshot, tables) -> ValidationResult:
+    """검사를 수행한 사람의 자격이 그 시점에 유효했는지.
+
+    자격이 만료된 검사원의 기록은 실제 QMS 에서 그 자체로 중대 부적합이다.
+    이 데이터에서는 의도한 장치가 아니므로 한 건도 없어야 한다.
+    """
+    inspectors = {r["inspector_id"]: r for r in tables["qms_inspector"]}
+    problems = []
+    for row in tables["qms_inspection"]:
+        person = inspectors.get(row["inspector_id"])
+        if person is None:
+            continue
+        when = row["inspection_datetime"].date()
+        if not (person["certified_from"] <= when <= person["certified_until"]):
+            problems.append(
+                f"{row['inspection_id']} 를 자격 범위 밖의 {row['inspector_id']} 가 수행했다"
+            )
+    detail = f"검사 {len(tables['qms_inspection'])}건 전부 유효 자격자가 수행"
+    return _result("검사원 자격", problems, detail, fatal=True)
 
 
 def _check_quantities(tables) -> ValidationResult:

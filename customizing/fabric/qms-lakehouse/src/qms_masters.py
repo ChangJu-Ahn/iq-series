@@ -24,6 +24,9 @@ from src.qms_reference import (
 
 _SHIFTS = ("A", "B", "C")
 
+# 검사원 자격 갱신 주기. 3년마다 재인증한다.
+_CERTIFICATION_PERIOD_DAYS = 365 * 3
+
 
 def build_defect_codes() -> list[dict]:
     """MES 상위 불량코드 6종을 QMS 세부코드 24종으로 전개한다."""
@@ -102,6 +105,22 @@ def spec_index(specs: list[dict]) -> dict[tuple[str, str, str], dict]:
     return {(s["product_code"], s["step_code"], s["characteristic_code"]): s for s in specs}
 
 
+def _certified_until(certified_from: dt.date, base_date: dt.date) -> dt.date:
+    """검사원 자격 만료일. 활동 중이면 항상 현재보다 뒤에 있다.
+
+    자격은 3년마다 갱신한다. 취득일에 3년을 한 번만 더하면 6년 전에 자격을 딴
+    사람은 3년 전에 만료된 상태가 된다. 그 상태로 검사 기록을 만들면 자격 없는
+    검사원이 수행한 검사가 대량으로 생긴다. 실제 QMS 에서 이는 그 자체로 중대
+    부적합이라 데이터가 앞뒤로 맞지 않는다.
+
+    그래서 취득일부터 3년 주기를 반복해 현재를 지나는 첫 만료일을 쓴다. 앵커가
+    어디로 이동해도 활동 중인 검사원의 자격은 유효하다.
+    """
+    elapsed = (base_date - certified_from).days
+    periods = elapsed // _CERTIFICATION_PERIOD_DAYS + 1
+    return certified_from + dt.timedelta(days=_CERTIFICATION_PERIOD_DAYS * periods)
+
+
 def build_inspectors(snapshot: MesSnapshot) -> list[dict]:
     """팀 5 × 교대 3 = 15명."""
     base_date = anchor_date(snapshot)
@@ -121,7 +140,7 @@ def build_inspectors(snapshot: MesSnapshot) -> list[dict]:
                     "qualification_level": QUALIFICATION_LEVELS[index % len(QUALIFICATION_LEVELS)],
                     "certified_characteristics": certified,
                     "certified_from": certified_from,
-                    "certified_until": certified_from + dt.timedelta(days=365 * 3),
+                    "certified_until": _certified_until(certified_from, base_date),
                     "is_active": True,
                 }
             )

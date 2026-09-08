@@ -457,3 +457,72 @@ def test_source_has_no_wall_clock_constants():
             if pattern.search(line):
                 offenders.append(f"{path}:{number}")
     assert not offenders, f"벽시계 상수가 남아 있습니다: {offenders}"
+
+
+# --- 검사원 자격 ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("shift_days", [0, 400, 1200, 3000])
+def test_active_inspectors_stay_certified_as_the_anchor_moves(snapshot, shift_days):
+    """앵커가 얼마나 멀리 가든 활동 중인 검사원의 자격은 유효하다.
+
+    자격 만료일을 취득일 + 3년으로 한 번만 계산하면, 앵커가 이동할수록 만료자가
+    늘어난다. 실측에서 207건 중 126건을 자격 없는 사람이 수행한 상태가 됐다.
+    갱신 주기를 반영하면 앵커 위치와 무관해진다.
+    """
+    moved = shifted_snapshot(snapshot, dt.timedelta(days=shift_days))
+    raw = max(parse_mes_time(r["out_time"]) for r in moved.process_results).date()
+    people = build_all_tables(moved)["qms_inspector"]
+    expired = [p["inspector_id"] for p in people if p["is_active"] and p["certified_until"] < raw]
+    assert not expired, f"{shift_days}일 이동에서 자격 만료: {expired}"
+    assert all(p["certified_from"] <= raw for p in people)
+
+
+def test_no_inspection_is_performed_outside_the_inspector_certification(tables):
+    """검사 시점이 그 검사원의 자격 기간 안에 있어야 한다."""
+    people = {p["inspector_id"]: p for p in tables["qms_inspector"]}
+    for row in tables["qms_inspection"]:
+        person = people[row["inspector_id"]]
+        when = row["inspection_datetime"].date()
+        assert person["certified_from"] <= when <= person["certified_until"], (
+            f"{row['inspection_id']} 를 자격 범위 밖의 {row['inspector_id']} 가 수행"
+        )
+
+
+# --- 시각 컬럼 분류 ---------------------------------------------------------
+
+
+def test_every_declared_time_column_is_classified():
+    """DDL 의 DATE·TIMESTAMP 가 완료·예정 중 하나로 분류돼 있어야 한다.
+
+    분류에서 빠진 컬럼은 미래 검사를 그냥 통과한다. 검증은 늘 PASS 라 안전해
+    보이지만 아무도 그 컬럼을 보고 있지 않다. 실제로 effective_from 과
+    certified_from/until 세 개가 빠져 있었다.
+    """
+    from src.qms_validate import _COMPLETED_COLUMNS, _PLANNED_COLUMNS
+
+    declared = set()
+    for table, ddl in TABLE_DDL.items():
+        for field in ddl.split(","):
+            parts = field.strip().rsplit(" ", 1)
+            if len(parts) == 2 and parts[1] in ("DATE", "TIMESTAMP"):
+                declared.add((table, parts[0]))
+
+    classified = set(_COMPLETED_COLUMNS) | set(_PLANNED_COLUMNS)
+    assert declared - classified == set(), f"분류 안 된 컬럼: {sorted(declared - classified)}"
+    assert classified - declared == set(), f"DDL 에 없는 컬럼: {sorted(classified - declared)}"
+    assert len(declared) == 12
+
+
+def test_classification_does_not_rely_on_column_name_patterns():
+    """이름에 date/time 이 들어가는지로 거르면 measured_at 이 빠진다.
+
+    FDC 쪽에서 두 번 연속 measured_at 을 놓친 원인이 이 필터였다. 같은 방식이
+    여기 들어오지 않게 못 박는다.
+    """
+    from src.qms_validate import _COMPLETED_COLUMNS
+
+    by_name = {(t, c) for t, c in _COMPLETED_COLUMNS if "date" in c.lower() or "time" in c.lower()}
+    missed = set(_COMPLETED_COLUMNS) - by_name
+    assert ("qms_measurement", "measured_at") in missed
+    assert ("qms_inspection_spec", "effective_from") in missed
