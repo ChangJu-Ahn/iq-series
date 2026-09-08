@@ -303,6 +303,49 @@ MES의 상위 불량코드 6종을 QMS가 원인·조치 단위로 4단계씩 �
 | ④ IQC 불합격 자재가 투입됨 | 2 | 불합격난 자재가 들어간 로트는? | `qms_nonconformance.ncr_source='입고검사'` 이고 `lot_id` 가 채워짐. `material_code`로 MES BOM을 거쳐 제품·공정 추적 |
 | ⑤ MES Rework ↔ 재작업 실패 후 폐기 | 2 | 재작업했지만 결국 폐기된 로트는? | `qms_disposition.rework_result='실패'` 이고 `disposition_type='폐기'` |
 
+## 조인할 때 반드시 지켜야 할 것
+
+### 계측은 규격을 자체 보유합니다 — 검사기준과 조인하지 마세요
+
+`qms_measurement` 는 `unit` · `target_value` · `lsl` · `usl` 을 자기 행에 갖고 있고, 그 값은 `spec_id` 가 가리키는 `qms_inspection_spec` 의 값과 260건 전부 일치합니다. **규격 이탈 판정에 조인이 필요 없습니다.**
+
+굳이 조인해야 하면 `spec_id` 를 쓰세요. `characteristic_code` 로 조인하면 안 됩니다.
+
+```
+qms_measurement 260행 기준
+  on spec_id                              260행  (1.00배)  틀린 짝 0
+  on product_code+step_code+characteristic_code
+                                          260행  (1.00배)  틀린 짝 0
+  on characteristic_code 단독            5,888행 (22.65배)  틀린 짝 5,628 (95.6%)
+```
+
+`characteristic_code` 는 여섯 종(CD/OVL/THK/PTC/RS/WRP)뿐이라 스펙 108행에서 유일하지 않습니다. `CD` 하나에 32행이 걸립니다. **제품마다 목표값이 다르기 때문입니다.**
+
+| characteristic_code | unit | target | 규격 |
+|---|---|---|---|
+| CD | nm | 24.75 | 22.275 ~ 27.225 |
+| CD | nm | 45.0 | 40.5 ~ 49.5 |
+| CD | nm | 72.0 | 64.8 ~ 79.2 |
+| CD | nm | 108.0 | 97.2 ~ 118.8 |
+
+단위는 같은 `nm` 인데 목표가 4배 차이입니다. 단위가 다르면 눈에 띄지만 여기서는 안 보입니다. 24.75nm 짜리를 108nm 규격으로 재면 전부 합격이 되고, 반대면 전부 불합격이 됩니다. 실제로 잘못된 짝의 7.7%에서 판정이 뒤집힙니다.
+
+그리고 행이 22.65배로 늘어나므로 `COUNT()` 와 `AVG()` 가 통째로 어긋납니다. 값 하나가 틀리는 것보다 나쁩니다 — 결과가 그럴듯해 보이기 때문입니다.
+
+### 불량코드는 QMS 24개가 MES 6개에 매핑됩니다
+
+`mes_defect_code` 는 **1:4** 입니다. MES 불량코드에서 `qms_defect_code` 로 조인하면 4배로 늘어납니다.
+
+```
+MES 불량 35건 → on mes_defect_code 140행 (4.00배)
+```
+
+MES 불량과 QMS 부적합을 잇고 싶으면 `qms_nonconformance.mes_defect_code` 를 쓰세요. 실제로 발생한 건만 들어 있어 증폭이 없습니다. `qms_defect_code` 는 코드 마스터일 뿐입니다.
+
+### 검사에는 `spec_id` 가 없습니다
+
+`qms_inspection` → `qms_inspection_spec` 은 `product_code` + `step_code` 로 잇고, 한 검사에 여러 특성이 걸리는 1:N 이 정상입니다(207 → 573행). `step_code` 단독으로 조인하면 12배가 되니 제품 코드를 빠뜨리지 마세요.
+
 ## 자주 쓰는 조인 경로
 
 ```sql

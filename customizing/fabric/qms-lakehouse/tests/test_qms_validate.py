@@ -31,6 +31,7 @@ def test_every_check_passes_on_generated_data(snapshot, tables):
         "검사원 자격",
         "수량 정합",
         "측정치 규격",
+        "계측 규격 복제",
         "불일치 장치",
     ]
     failed = [r for r in results if not r.passed]
@@ -51,6 +52,7 @@ def test_fatal_checks_are_the_ones_that_block_loading(snapshot, tables):
         "시각 컬럼 분류",
         "미래 완료 사건",
         "검사원 자격",
+        "계측 규격 복제",
     }
 
 

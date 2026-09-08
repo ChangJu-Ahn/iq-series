@@ -59,6 +59,7 @@ def validate(snapshot: MesSnapshot, tables: dict[str, list[dict]]) -> list[Valid
         _check_inspector_certification(snapshot, tables),
         _check_quantities(tables),
         _check_measurement_limits(tables),
+        _check_denormalized_specs(tables),
         _check_devices(snapshot, tables),
     ]
 
@@ -326,6 +327,41 @@ def _check_measurement_limits(tables) -> ValidationResult:
         if row["judgment"] != ("NG" if outside else "OK"):
             problems.append(f"{row['measurement_id']} 판정 불일치")
     return _result("측정치 규격", problems, "규격 이탈 플래그 전건 일치")
+
+
+_DENORMALIZED_SPEC_FIELDS = ("unit", "target_value", "lsl", "usl")
+
+
+def _check_denormalized_specs(tables) -> ValidationResult:
+    """계측이 들고 있는 규격이 그 spec_id 의 것과 같은지 본다.
+
+    qms_measurement 는 규격 네 값을 자기 행에 복제해 둔다. 덕분에 규격 이탈
+    판정에 조인이 필요 없고, 참가자가 characteristic_code 로 잘못 조인할 이유도
+    없어진다. 그 복제가 어긋나면 문서가 "조인하지 마세요"라고 안내하는 근거가
+    사라지므로 치명으로 둔다.
+
+    characteristic_code 는 여섯 종뿐이라 스펙 108행에서 유일하지 않다. CD 하나에
+    32행이 걸리고 제품마다 목표가 4배까지 다르다. 그 조인은 22.65배로 늘어나며
+    짝의 95.6%가 다른 제품의 규격이다.
+    """
+    specs = {s["spec_id"]: s for s in tables["qms_inspection_spec"]}
+    drift = []
+    for row in tables["qms_measurement"]:
+        spec = specs.get(row["spec_id"])
+        if spec is None:
+            drift.append(f"{row['measurement_id']}: spec_id 없음")
+            continue
+        for field in _DENORMALIZED_SPEC_FIELDS:
+            if row[field] != spec[field]:
+                drift.append(f"{row['measurement_id']}.{field} {row[field]} != {spec[field]}")
+    return ValidationResult(
+        "계측 규격 복제",
+        not drift,
+        f"규격 4값 복제 {len(tables['qms_measurement'])}건 전부 일치"
+        if not drift
+        else f"복제 불일치 {len(drift)}건: {drift[:3]}",
+        fatal=True,
+    )
 
 
 def _check_devices(snapshot, tables) -> ValidationResult:
