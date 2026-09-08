@@ -139,3 +139,147 @@ def test_the_doc_separates_completed_events_from_deadlines():
     assert re.search(r"(due_date|기한).*(미래|아직)", text, re.DOTALL), (
         "미래가 정상인 컬럼과 아닌 컬럼의 구별이 없다"
     )
+
+
+# --------------------------------------------------------------------------
+# 스펙 조인의 복합키
+#
+# QMS 가 자기 검증기에서 "손으로 적은 컬럼 목록 밖은 아무도 보지 않는다"를
+# 찾아내고, 범위를 넓히자마자 검사원 자격 만료라는 더 큰 결함이 나왔다고
+# 알려 왔다. 같은 방법을 여기 적용했다. 검증기가 보는 범위 밖에서
+# reading.unit 과 spec.unit 을 대조해 보니 CHAMBER_PRESSURE 가 걸렸다.
+#
+# 데이터 자체는 정확했다. 위험한 건 조인하는 쪽이다.
+# --------------------------------------------------------------------------
+
+
+def _doc() -> str:
+    return SCHEMA_DOC.read_text(encoding="utf-8")
+
+
+def _spec_rows():
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from src.fdc_sensors import build_sensor_spec_rows
+
+    return build_sensor_spec_rows()
+
+
+def test_the_same_sensor_code_really_does_carry_different_units():
+    """복합키 경고가 실재하는 함정을 가리키는지 확인한다.
+
+    이 성질이 사라지면 문서의 경고가 과잉이 되고, 반대로 이 성질이 있는데
+    경고가 없으면 조인을 틀린 사람이 조용히 오답을 얻는다. 둘을 묶어 둔다.
+
+    단위가 갈리는 쪽이 값 범위만 갈리는 쪽보다 위험하다. Furnace 1050°C 대
+    CVD 420°C 는 자릿수가 달라 눈에 띄지만, mTorr 대 Torr 는 값이 그럴듯해
+    보인다.
+    """
+    from collections import defaultdict
+
+    units = defaultdict(set)
+    for row in _spec_rows():
+        units[row["sensor_code"]].add(row["unit"])
+
+    split = {code: u for code, u in units.items() if len(u) > 1}
+    assert split, (
+        "같은 sensor_code 가 단위까지 갈리는 경우가 없어졌다."
+        " 그렇다면 data-agent-schema.md 의 단위 경고를 지워야 한다"
+    )
+
+    doc = _doc()
+    for code in split:
+        # 부분 문자열로 찾으면 안 된다. 이름 뒤에 무엇을 붙여도 통과한다 --
+        # 돌연변이로 CHAMBER_PRESSURE 를 CHAMBER_PRESSURE_X 로 바꿨더니
+        # 그대로 통과했다. README 의 `.drop table` 검사에서 같은 실수를
+        # 한 직후였다. 밑줄은 단어 문자라 \b 가 경계를 잡아 준다.
+        assert re.search(rf"\b{re.escape(code)}\b", doc), (
+            f"{code} 는 설비 유형마다 단위가 다른데({split[code]})"
+            " 에이전트 문서가 그 사실을 알려주지 않는다"
+        )
+
+
+def test_the_schema_doc_joins_the_spec_table_on_the_full_key():
+    """스펙 조인 예시가 복합키를 써야 한다.
+
+    `on sensor_code` 로 줄이면 판독값의 40.8% 가 다른 설비 유형의 한계치에
+    붙는다. 쿼리는 성공하고 행 수도 그럴듯하다. 값만 틀린다.
+
+    문서가 지금은 맞다. 맞는 것을 고정해 두지 않으면 다음 사람이 예시를
+    줄여도 아무도 모른다.
+    """
+    import re
+
+    doc = _doc()
+    joins = re.findall(r"join[^\n]*fdc_sensor_spec[^\n]*", doc)
+    assert joins, "스펙 조인 예시가 사라졌다"
+
+    for line in joins:
+        assert "eqp_type" in line and "sensor_code" in line, (
+            f"스펙 조인이 복합키가 아니다: {line!r}."
+            " sensor_code 만으로는 유일하지 않아 40.8% 가 틀린 한계치에 붙는다"
+        )
+
+
+def test_the_documented_mis_join_damage_is_actually_measured():
+    """문서가 인용한 부풀림 배수와 오짝 비율이 실제 데이터와 맞아야 한다.
+
+    QMS 가 `assert len(results) == 10` 처럼 개수만 세는 검사의 함정을 알려
+    왔다. 문자열이 문서에 있는지만 보면 숫자가 낡아도 통과한다. 참가자는
+    낡은 숫자로 위험을 잰다.
+
+    이 검사를 만들자마자 문서가 틀린 것이 드러났다. 처음엔 "판독값의 40.8%
+    가 다른 유형의 한계치에 붙는다"고 적었는데, 그건 스펙에서 코드마다 한
+    행만 고른다고 가정한 값이었다. `inner join` 은 고르지 않고 **모든 짝을
+    만든다.** 실제로는 결과가 3.6배로 부풀고 그중 72%가 쓰레기다. 집계가
+    통째로 어긋나므로 훨씬 나쁘다.
+
+    정확한 값을 못 박지는 않는다. 앵커를 고정해 재배포하면 픽스처를 다시
+    뜨고 그때 설비 구성이 조금 달라진다. 크게 어긋날 때만 잡는다.
+    """
+    import json
+    import sys
+    from collections import defaultdict
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root))
+    from src.fdc_generator import build_readings
+    from src.fdc_runs import span
+    from src.fdc_sensors import build_sensor_spec_rows
+    from src.mes_probe import MesFacts
+
+    doc = _doc()
+    inflation = re.search(r"결과가 (\d+(?:\.\d+)?)배로 부풀", doc)
+    garbage = re.search(r"그중 (\d+(?:\.\d+)?)%\s*가 엉뚱한", doc)
+    assert inflation, "조인을 틀렸을 때 행이 부푼다는 사실이 문서에서 사라졌다"
+    assert garbage, "부푼 행의 몇 %가 쓰레기인지가 문서에서 사라졌다"
+
+    fixture = root / "tests" / "fixtures" / "mes_facts.json"
+    facts = MesFacts.from_dict(json.loads(fixture.read_text(encoding="utf-8")))
+    rows = build_readings(facts, *span(facts))
+
+    by_code = defaultdict(list)
+    for spec in build_sensor_spec_rows():
+        by_code[spec["sensor_code"]].append(spec)
+
+    # inner join 은 짝을 고르지 않는다. 전부 만든다.
+    joined = sum(len(by_code[r["sensor_code"]]) for r in rows)
+    wrong = sum(
+        sum(1 for s in by_code[r["sensor_code"]] if s["eqp_type"] != r["eqp_type"])
+        for r in rows
+    )
+
+    actual_inflation = joined / len(rows)
+    actual_garbage = wrong / joined * 100
+
+    assert abs(actual_inflation - float(inflation.group(1))) <= 0.5, (
+        f"문서는 {inflation.group(1)}배라는데 실제로는 {actual_inflation:.2f}배다"
+    )
+    assert abs(actual_garbage - float(garbage.group(1))) <= 5.0, (
+        f"문서는 {garbage.group(1)}% 라는데 실제로는 {actual_garbage:.1f}% 다"
+    )
+
+    assert actual_inflation > 1.0, (
+        "부풀림이 사라졌다면 복합키 경고가 과잉이다. 문서를 지워야 한다"
+    )
